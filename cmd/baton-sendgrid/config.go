@@ -6,10 +6,20 @@ import (
 )
 
 var (
+	SendGridApiKeyField = field.StringField(""+
+		"sendgrid-api-key",
+		field.WithRequired(true),
+		field.WithDescription("API key for SendGrid service."),
+	)
+)
+
+var (
 	// ConfigurationFields defines the external configuration required for the
 	// connector to run. Note: these fields can be marked as optional or
 	// required.
-	ConfigurationFields = []field.SchemaField{}
+	ConfigurationFields = []field.SchemaField{
+		SendGridApiKeyField,
+	}
 
 	// FieldRelationships defines relationships between the fields listed in
 	// ConfigurationFields that can be automatically validated. For example, a
