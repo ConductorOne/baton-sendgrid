@@ -13,7 +13,5 @@ var (
 	scopeResourceType = &v2.ResourceType{
 		Id:          "scope",
 		DisplayName: "Scope",
-		// TODO: validate this TRAIT
-		Traits: []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
 	}
 )

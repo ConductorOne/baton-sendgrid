@@ -25,7 +25,7 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		return nil, "", nil, err
 	}
 
-	rv := make([]*v2.Resource, 0, len(teammates))
+	rv := make([]*v2.Resource, len(teammates))
 	for i, teammate := range teammates {
 		us, err := userResource(ctx, &teammate, nil)
 		if err != nil {
@@ -34,7 +34,6 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		rv[i] = us
 	}
 
-	// TODO: what are annotations?
 	return rv, "", nil, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,10 +18,15 @@ var (
 )
 
 var (
-	SendGridBaseUrl = "https://api.sendgrid.com/"
-	AuthHeaderName  = "Authorization"
+	SendGridBaseUrl   = "https://api.sendgrid.com/"
+	SendGridEUBaseUrl = "https://api.eu.sendgrid.com/"
+	AuthHeaderName    = "Authorization"
 
-	retrieveAllTeammatesEndpoint = "v3/teammates"
+	RetrieveAllTeammatesEndpoint = "v3/teammates"
+	InviteTeammateEndpoint       = "v3/teammates"
+	DeleteTeammateEndpoint       = "v3/teammates"
+	SpecificTeammateEndpoint     = "v3/teammates/%s"
+	PendingTeammateEndpoint      = "v3/teammates/pending"
 )
 
 type CustomErrField struct {
@@ -29,7 +35,7 @@ type CustomErrField struct {
 }
 
 func (c CustomErrField) Error() string {
-	return fmt.Sprintf("field: %s, message: %s", c.Field, c.Message)
+	return fmt.Sprintf("field: %s.json, message: %s.json", c.Field, c.Message)
 }
 
 type CustomErr struct {
@@ -45,6 +51,8 @@ func (c CustomErr) Error() error {
 	return errors.Join(errorsResult...)
 }
 
+// SendGridClient is a client for the SendGrid API.
+// TODO: Create an interface for this client.
 type SendGridClient struct {
 	httpClient *uhttp.BaseHttpClient
 	baseUrl    *url.URL
@@ -52,7 +60,7 @@ type SendGridClient struct {
 	limit      int
 }
 
-func NewClient(baseUrl, apiKey string) (*SendGridClient, error) {
+func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, error) {
 	parseBaseUrl, err := url.Parse(baseUrl)
 	if err != nil {
 		return nil, err
@@ -62,8 +70,18 @@ func NewClient(baseUrl, apiKey string) (*SendGridClient, error) {
 		return nil, ErrApiKeyIsEmpty
 	}
 
+	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, ctxzap.Extract(ctx)))
+	if err != nil {
+		return nil, err
+	}
+
+	uhtppClient, err := uhttp.NewBaseHttpClientWithContext(ctx, httpClient)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SendGridClient{
-		httpClient: &uhttp.BaseHttpClient{},
+		httpClient: uhtppClient,
 		baseUrl:    parseBaseUrl,
 		apiKey:     apiKey,
 		limit:      500,
@@ -74,63 +92,105 @@ func (h *SendGridClient) getUrl(endPoint string) *url.URL {
 	return h.baseUrl.JoinPath(endPoint)
 }
 
+// InviteTeammate Invite a teammate.
+// https://www.twilio.com/docs/sendgrid/api-reference/teammates/invite-teammate
+func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
+	uri := h.getUrl(InviteTeammateEndpoint)
+
+	bodyPost := struct {
+		Email   string   `json:"email"`
+		Scopes  []string `json:"scopes"`
+		IsAdmin bool     `json:"is_admin"`
+	}{
+		Email:   email,
+		Scopes:  scopes,
+		IsAdmin: isAdmin,
+	}
+
+	return h.doRequest(ctx, http.MethodPost, uri, nil, bodyPost)
+}
+
+// DeleteTeammate Delete a teammate.
+// https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-teammate
+func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string) error {
+	uri := h.getUrl(DeleteTeammateEndpoint).JoinPath(username)
+
+	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
+}
+
+// GetSpecificTeammate Retrieve a specific teammate with scopes.
+func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error) {
+	uri := h.getUrl(fmt.Sprintf(SpecificTeammateEndpoint, username))
+	var requestResponse TeammateScope
+
+	err := h.doRequest(
+		ctx,
+		http.MethodGet,
+		uri,
+		&requestResponse,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &requestResponse, nil
+}
+
 // GetTeammates List All Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-teammates
-func (h *SendGridClient) GetTeammates(ctx context.Context) ([]SubUserAccess, error) {
+func (h *SendGridClient) GetTeammates(ctx context.Context) ([]Teammate, error) {
 	limit := h.limit
 
-	var response []SubUserAccess
+	var response []Teammate
+	offset := 0
 
-	requestResponse := struct {
-		SubUserAccess []SubUserAccess `json:"subuser_access"`
-		Metadata      struct {
-			NextParams PaginationData `json:"next_params"`
-		} `json:"metadata"`
-	}{}
-
-	afterSubuserId := ""
+	var requestResponse CommonResponse[[]Teammate]
 
 	for {
-		uri := h.getUrl(retrieveAllTeammatesEndpoint)
+		uri := h.getUrl(RetrieveAllTeammatesEndpoint)
 		query := uri.Query()
 		query.Add("limit", fmt.Sprintf("%d", limit))
-		if afterSubuserId != "" {
-			query.Add("after_subuser_id", afterSubuserId)
-		}
+		query.Add("offset", fmt.Sprintf("%d", offset))
+
 		uri.RawQuery = query.Encode()
 
-		err := h.getAPIData(ctx,
+		err := h.doRequest(
+			ctx,
 			http.MethodGet,
 			uri,
 			&requestResponse,
+			nil,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		response = append(response, requestResponse.SubUserAccess...)
+		response = append(response, requestResponse.Result...)
 
-		if requestResponse.Metadata.NextParams.AfterSubuserId != "" {
-			afterSubuserId = requestResponse.Metadata.NextParams.AfterSubuserId
-		} else {
+		if len(requestResponse.Result) == 0 {
 			break
+		} else {
+			offset += len(requestResponse.Result)
 		}
 	}
 
 	return response, nil
 }
 
-func (h *SendGridClient) getAPIData(
-	ctx context.Context,
-	method string,
-	uri *url.URL,
-	res any,
-) error {
-	if err := h.doRequest(ctx, method, uri, &res, nil); err != nil {
-		return err
+// GetPendingTeammates List All Pending Teammates.
+// https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-pending-teammates
+func (h *SendGridClient) GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error) {
+	uri := h.getUrl(PendingTeammateEndpoint)
+
+	var response []PendingUserAccess
+
+	err := h.doRequest(ctx, http.MethodGet, uri, response, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return response, nil
 }
 
 func getError(resp *http.Response) (CustomErr, error) {
@@ -164,7 +224,7 @@ func (h *SendGridClient) doRequest(
 		ctx,
 		method,
 		urlAddress,
-		uhttp.WithHeader(AuthHeaderName, h.apiKey),
+		uhttp.WithHeader(AuthHeaderName, fmt.Sprintf("Bearer %s", h.apiKey)),
 		uhttp.WithJSONBody(body),
 	)
 	if err != nil {

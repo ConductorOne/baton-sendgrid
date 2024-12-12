@@ -11,6 +11,13 @@ var (
 		field.WithRequired(true),
 		field.WithDescription("API key for SendGrid service."),
 	)
+
+	SendGridRegionField = field.StringField(""+
+		"sendgrid-region",
+		field.WithRequired(false),
+		field.WithDefaultValue("global"),
+		field.WithDescription("Region for SendGrid service ex: global or eu."),
+	)
 )
 
 var (

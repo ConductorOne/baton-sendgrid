@@ -50,8 +50,14 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 	}
 
 	sendGridApyKey := v.GetString(SendGridApiKeyField.GetName())
+	sendgridRegion := v.GetString(SendGridRegionField.GetName())
 
-	sendGridCliet, err := client.NewClient(client.SendGridBaseUrl, sendGridApyKey)
+	baseUrl := client.SendGridBaseUrl
+	if sendgridRegion == "eu" {
+		baseUrl = client.SendGridEUBaseUrl
+	}
+
+	sendGridCliet, err := client.NewClient(ctx, baseUrl, sendGridApyKey)
 	if err != nil {
 		l.Error("error creating sendgrid client", zap.Error(err))
 		return nil, err

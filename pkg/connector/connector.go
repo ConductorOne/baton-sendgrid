@@ -16,17 +16,19 @@ var (
 )
 
 type Connector struct {
-	client *client.SendGridClient
+	client     *client.SendGridClient
+	scopeCache *scopeCache
 }
 
 // ResourceSyncers returns a ResourceSyncer for each resource type that should be synced from the upstream service.
 func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	return []connectorbuilder.ResourceSyncer{
 		newUserBuilder(d.client),
+		newScopeBuilder(d.client, d.scopeCache),
 	}
 }
 
-// Asset takes an input AssetRef and attempts to fetch it using the connector's authenticated http client
+// Asset takes an input AssetRef and attempts to fetch it using the connector's.json authenticated http client
 // It streams a response, always starting with a metadata object, following by chunked payloads for the asset.
 func (d *Connector) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadCloser, error) {
 	return "", nil, nil
@@ -53,6 +55,7 @@ func New(ctx context.Context, client *client.SendGridClient) (*Connector, error)
 	}
 
 	return &Connector{
-		client: client,
+		client:     client,
+		scopeCache: newScopeCache(client),
 	}, nil
 }
