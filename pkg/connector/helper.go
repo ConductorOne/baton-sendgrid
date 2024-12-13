@@ -7,6 +7,39 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
+func userResourceFromSubuser(ctx context.Context, subuser *client.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
+
+	if subuser.Disabled {
+		userStatus = v2.UserTrait_Status_STATUS_DISABLED
+	}
+
+	profile := map[string]interface{}{
+		"username": subuser.Username,
+		"email":    subuser.Email,
+	}
+
+	userTraits := []rs.UserTraitOption{
+		rs.WithUserProfile(profile),
+		rs.WithStatus(userStatus),
+		rs.WithEmail(subuser.Email, true),
+		rs.WithUserLogin(subuser.Email),
+	}
+
+	ret, err := rs.NewUserResource(
+		subuser.Email,
+		userResourceType,
+		// Twilio doesn't have a unique ID for users, so we use the username as the ID
+		subuser.Email,
+		userTraits,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
 func userResource(ctx context.Context, user *client.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
@@ -24,6 +57,7 @@ func userResource(ctx context.Context, user *client.Teammate, parentResourceID *
 		rs.WithUserProfile(profile),
 		rs.WithStatus(userStatus),
 		rs.WithEmail(user.Email, true),
+		rs.WithUserLogin(user.Email),
 	}
 
 	ret, err := rs.NewUserResource(
@@ -54,6 +88,32 @@ func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.Resour
 		scopeResourceType,
 		string(scope),
 		roleTraitOptions,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resource, nil
+}
+
+func subuserResource(ctx context.Context, subuser client.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+	profile := map[string]interface{}{
+		"id":       subuser.Id,
+		"username": subuser.Username,
+		"email":    subuser.Email,
+		"disabled": subuser.Disabled,
+	}
+
+	subUserTraitOptions := rs.WithAppTrait(
+		rs.WithAppProfile(profile),
+	)
+
+	resource, err := rs.NewResource(
+		subuser.Username,
+		subuserResourceType,
+		subuser.Email,
+		subUserTraitOptions,
 	)
 
 	if err != nil {

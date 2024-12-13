@@ -16,8 +16,9 @@ var (
 )
 
 type Connector struct {
-	client     *client.SendGridClient
-	scopeCache *scopeCache
+	client         client.SendGridClient
+	scopeCache     *scopeCache
+	ignoreSubusers bool
 }
 
 // ResourceSyncers returns a ResourceSyncer for each resource type that should be synced from the upstream service.
@@ -25,6 +26,7 @@ func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 	return []connectorbuilder.ResourceSyncer{
 		newUserBuilder(d.client),
 		newScopeBuilder(d.client, d.scopeCache),
+		newSubuserBuilder(d.client, d.ignoreSubusers),
 	}
 }
 
@@ -49,13 +51,14 @@ func (d *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 }
 
 // New returns a new instance of the connector.
-func New(ctx context.Context, client *client.SendGridClient) (*Connector, error) {
+func New(ctx context.Context, client client.SendGridClient, ignoreSubusers bool) (*Connector, error) {
 	if client == nil {
 		return nil, ErrSendgridClientNotProvided
 	}
 
 	return &Connector{
-		client:     client,
-		scopeCache: newScopeCache(client),
+		client:         client,
+		scopeCache:     newScopeCache(client),
+		ignoreSubusers: ignoreSubusers,
 	}, nil
 }

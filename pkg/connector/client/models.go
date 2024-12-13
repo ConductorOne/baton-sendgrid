@@ -44,3 +44,19 @@ type PendingUserAccess struct {
 	FirstName      string `json:"first_name"`
 	LastName       string `json:"last_name"`
 }
+
+type Subuser struct {
+	Disabled bool   `json:"disabled"`
+	Email    string `json:"email"`
+	Id       int    `json:"id"`
+	Username string `json:"username"`
+}
+
+type SubuserCreate struct {
+	Username      string   `json:"username"`
+	Email         string   `json:"email"`
+	Password      string   `json:"password"`
+	Ips           []string `json:"ips"`
+	Region        string   `json:"region"`
+	IncludeRegion bool     `json:"include_region"`
+}

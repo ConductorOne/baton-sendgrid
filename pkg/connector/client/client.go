@@ -27,6 +27,10 @@ var (
 	DeleteTeammateEndpoint       = "v3/teammates"
 	SpecificTeammateEndpoint     = "v3/teammates/%s"
 	PendingTeammateEndpoint      = "v3/teammates/pending"
+
+	SubusersEndpoint              = "v3/subusers"
+	SpecificSubusersEndpoint      = "v3/subusers/%s"
+	SubusersWebsiteAccessEndpoint = "/v3/subusers/%s/website_access"
 )
 
 type CustomErrField struct {
@@ -51,16 +55,29 @@ func (c CustomErr) Error() error {
 	return errors.Join(errorsResult...)
 }
 
-// SendGridClient is a client for the SendGrid API.
-// TODO: Create an interface for this client.
-type SendGridClient struct {
+type SendGridClient interface {
+	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error
+	DeleteTeammate(ctx context.Context, username string) error
+
+	GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error)
+	GetTeammates(ctx context.Context) ([]Teammate, error)
+	GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error)
+
+	GetSubusers(ctx context.Context) ([]Subuser, error)
+	CreateSubuser(ctx context.Context, subuser SubuserCreate) error
+	DeleteSubuser(ctx context.Context, username string) error
+	SetSubuserDisabled(ctx context.Context, username string, disabled bool) error
+}
+
+// SendGridClientImpl is a client for the SendGrid API.
+type SendGridClientImpl struct {
 	httpClient *uhttp.BaseHttpClient
 	baseUrl    *url.URL
 	apiKey     string
-	limit      int
+	pageLimit  int
 }
 
-func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, error) {
+func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClientImpl, error) {
 	parseBaseUrl, err := url.Parse(baseUrl)
 	if err != nil {
 		return nil, err
@@ -80,21 +97,17 @@ func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, er
 		return nil, err
 	}
 
-	return &SendGridClient{
+	return &SendGridClientImpl{
 		httpClient: uhtppClient,
 		baseUrl:    parseBaseUrl,
 		apiKey:     apiKey,
-		limit:      500,
+		pageLimit:  500,
 	}, nil
-}
-
-func (h *SendGridClient) getUrl(endPoint string) *url.URL {
-	return h.baseUrl.JoinPath(endPoint)
 }
 
 // InviteTeammate Invite a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/invite-teammate
-func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
+func (h *SendGridClientImpl) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
 	uri := h.getUrl(InviteTeammateEndpoint)
 
 	bodyPost := struct {
@@ -112,14 +125,14 @@ func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scope
 
 // DeleteTeammate Delete a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-teammate
-func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string) error {
+func (h *SendGridClientImpl) DeleteTeammate(ctx context.Context, username string) error {
 	uri := h.getUrl(DeleteTeammateEndpoint).JoinPath(username)
 
 	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
 }
 
 // GetSpecificTeammate Retrieve a specific teammate with scopes.
-func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error) {
+func (h *SendGridClientImpl) GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error) {
 	uri := h.getUrl(fmt.Sprintf(SpecificTeammateEndpoint, username))
 	var requestResponse TeammateScope
 
@@ -139,9 +152,7 @@ func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username strin
 
 // GetTeammates List All Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-teammates
-func (h *SendGridClient) GetTeammates(ctx context.Context) ([]Teammate, error) {
-	limit := h.limit
-
+func (h *SendGridClientImpl) GetTeammates(ctx context.Context) ([]Teammate, error) {
 	var response []Teammate
 	offset := 0
 
@@ -150,7 +161,7 @@ func (h *SendGridClient) GetTeammates(ctx context.Context) ([]Teammate, error) {
 	for {
 		uri := h.getUrl(RetrieveAllTeammatesEndpoint)
 		query := uri.Query()
-		query.Add("limit", fmt.Sprintf("%d", limit))
+		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
 		query.Add("offset", fmt.Sprintf("%d", offset))
 
 		uri.RawQuery = query.Encode()
@@ -180,17 +191,105 @@ func (h *SendGridClient) GetTeammates(ctx context.Context) ([]Teammate, error) {
 
 // GetPendingTeammates List All Pending Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-pending-teammates
-func (h *SendGridClient) GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error) {
-	uri := h.getUrl(PendingTeammateEndpoint)
-
+func (h *SendGridClientImpl) GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error) {
 	var response []PendingUserAccess
 
-	err := h.doRequest(ctx, http.MethodGet, uri, response, nil)
-	if err != nil {
-		return nil, err
+	offset := 0
+
+	for {
+		var requestResponse []PendingUserAccess
+
+		uri := h.getUrl(PendingTeammateEndpoint)
+		query := uri.Query()
+		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+		query.Add("offset", fmt.Sprintf("%d", offset))
+		uri.RawQuery = query.Encode()
+
+		err := h.doRequest(ctx, http.MethodGet, uri, &requestResponse, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		response = append(response, requestResponse...)
+
+		if len(requestResponse) == 0 {
+			break
+		} else {
+			offset += len(requestResponse)
+		}
 	}
 
 	return response, nil
+}
+
+// GetSubusers List All Subusers.
+// https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/list-all-subusers
+func (h *SendGridClientImpl) GetSubusers(ctx context.Context) ([]Subuser, error) {
+	response := make([]Subuser, 0)
+
+	offset := 0
+
+	for {
+		var requestResponse []Subuser
+
+		uri := h.getUrl(SubusersEndpoint)
+		query := uri.Query()
+		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+		query.Add("offset", fmt.Sprintf("%d", offset))
+		uri.RawQuery = query.Encode()
+
+		err := h.doRequest(ctx, http.MethodGet, uri, &requestResponse, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		response = append(response, requestResponse...)
+
+		if len(requestResponse) == 0 {
+			break
+		} else {
+			offset += len(requestResponse)
+		}
+	}
+
+	return response, nil
+
+}
+
+// CreateSubuser Create a Subuser.
+// https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/create-subuser
+func (h *SendGridClientImpl) CreateSubuser(ctx context.Context, subuser SubuserCreate) error {
+	uri := h.getUrl(SubusersEndpoint)
+
+	return h.doRequest(ctx, http.MethodPost, uri, nil, subuser)
+}
+
+// DeleteSubuser Delete a Subuser.
+// https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/delete-a-subuser
+func (h *SendGridClientImpl) DeleteSubuser(ctx context.Context, username string) error {
+	uri := h.getUrl(fmt.Sprintf(SpecificSubusersEndpoint, username))
+
+	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
+}
+
+// SetSubuserAccess Set Subuser Access.
+// https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/enabledisable-website-access-to-a-subuser
+func (h *SendGridClientImpl) SetSubuserDisabled(ctx context.Context, username string, disabled bool) error {
+	uri := h.getUrl(fmt.Sprintf(SubusersWebsiteAccessEndpoint, username))
+
+	body := struct {
+		Disabled bool `json:"disabled"`
+	}{
+		Disabled: disabled,
+	}
+
+	return h.doRequest(ctx, http.MethodPatch, uri, nil, body)
+}
+
+// Helpers
+
+func (h *SendGridClientImpl) getUrl(endPoint string) *url.URL {
+	return h.baseUrl.JoinPath(endPoint)
 }
 
 func getError(resp *http.Response) (CustomErr, error) {
@@ -208,7 +307,7 @@ func getError(resp *http.Response) (CustomErr, error) {
 	return cErr, nil
 }
 
-func (h *SendGridClient) doRequest(
+func (h *SendGridClientImpl) doRequest(
 	ctx context.Context,
 	method string,
 	urlAddress *url.URL,
@@ -244,13 +343,24 @@ func (h *SendGridClient) doRequest(
 		}
 	}
 
-	if resp != nil && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest) {
-		cErr, err := getError(resp)
-		if err != nil {
-			return err
+	if resp != nil {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return errors.New("unauthorized")
 		}
 
-		return cErr.Error()
+		if resp.StatusCode == http.StatusForbidden {
+			return errors.New("forbidden")
+		}
+
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
+			cErr, err := getError(resp)
+			if err != nil {
+				return err
+			}
+			return cErr.Error()
+		}
+
+		return err
 	}
 
 	if err != nil {

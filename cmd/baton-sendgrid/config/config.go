@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"github.com/conductorone/baton-sdk/pkg/field"
@@ -6,17 +6,23 @@ import (
 )
 
 var (
-	SendGridApiKeyField = field.StringField(""+
+	SendGridApiKeyField = field.StringField(
 		"sendgrid-api-key",
 		field.WithRequired(true),
 		field.WithDescription("API key for SendGrid service."),
 	)
 
-	SendGridRegionField = field.StringField(""+
+	SendGridRegionField = field.StringField(
 		"sendgrid-region",
 		field.WithRequired(false),
 		field.WithDefaultValue("global"),
 		field.WithDescription("Region for SendGrid service ex: global or eu."),
+	)
+
+	IgnoreSubusers = field.BoolField(
+		"sendgrid-ignore-subusers",
+		field.WithDefaultValue(false),
+		field.WithDescription("Ignore subusers in the SendGrid account, subusers are an upgraded feature of sendgrid."),
 	)
 )
 
@@ -26,6 +32,8 @@ var (
 	// required.
 	ConfigurationFields = []field.SchemaField{
 		SendGridApiKeyField,
+		SendGridRegionField,
+		IgnoreSubusers,
 	}
 
 	// FieldRelationships defines relationships between the fields listed in

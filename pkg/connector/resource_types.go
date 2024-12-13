@@ -14,4 +14,9 @@ var (
 		Id:          "scope",
 		DisplayName: "Scope",
 	}
+
+	subuserResourceType = &v2.ResourceType{
+		Id:          "subuser",
+		DisplayName: "Subuser",
+	}
 )

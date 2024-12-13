@@ -10,7 +10,7 @@ import (
 )
 
 type userBuilder struct {
-	client *client.SendGridClient
+	client client.SendGridClient
 }
 
 func (u *userBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -34,6 +34,19 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		rv[i] = us
 	}
 
+	subusers, err := u.client.GetSubusers(ctx)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	for _, subuser := range subusers {
+		us, err := userResourceFromSubuser(ctx, &subuser, nil)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, us)
+	}
+
 	return rv, "", nil, nil
 }
 
@@ -47,7 +60,7 @@ func (us *userBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	return nil, "", nil, nil
 }
 
-func newUserBuilder(client *client.SendGridClient) *userBuilder {
+func newUserBuilder(client client.SendGridClient) *userBuilder {
 	return &userBuilder{
 		client: client,
 	}

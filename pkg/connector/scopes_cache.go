@@ -7,11 +7,11 @@ import (
 )
 
 type scopeCache struct {
-	client      *client.SendGridClient
+	client      client.SendGridClient
 	scopeToUser map[string][]*client.TeammateScope
 }
 
-func newScopeCache(gridClient *client.SendGridClient) *scopeCache {
+func newScopeCache(gridClient client.SendGridClient) *scopeCache {
 	return &scopeCache{
 		client:      gridClient,
 		scopeToUser: make(map[string][]*client.TeammateScope),

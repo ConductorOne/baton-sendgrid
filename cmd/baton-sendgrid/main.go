@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	config2 "github.com/conductorone/baton-sendgrid/cmd/baton-sendgrid/config"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"os"
 
@@ -26,7 +27,7 @@ func main() {
 		"baton-sendgrid",
 		getConnector,
 		field.Configuration{
-			Fields: ConfigurationFields,
+			Fields: config2.ConfigurationFields,
 		},
 	)
 	if err != nil {
@@ -45,16 +46,24 @@ func main() {
 
 func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, error) {
 	l := ctxzap.Extract(ctx)
-	if err := ValidateConfig(v); err != nil {
+	if err := config2.ValidateConfig(v); err != nil {
 		return nil, err
 	}
 
-	sendGridApyKey := v.GetString(SendGridApiKeyField.GetName())
-	sendgridRegion := v.GetString(SendGridRegionField.GetName())
+	sendGridApyKey := v.GetString(config2.SendGridApiKeyField.GetName())
+	sendgridRegion := v.GetString(config2.SendGridRegionField.GetName())
+	sendgridIgnoreSubusers := v.GetBool(config2.IgnoreSubusers.GetName())
 
-	baseUrl := client.SendGridBaseUrl
-	if sendgridRegion == "eu" {
+	var baseUrl string
+
+	switch sendgridRegion {
+	case "eu":
 		baseUrl = client.SendGridEUBaseUrl
+	case "global":
+		baseUrl = client.SendGridBaseUrl
+	default:
+		baseUrl = client.SendGridBaseUrl
+		l.Warn("invalid sendgrid region", zap.String("region", sendgridRegion))
 	}
 
 	sendGridCliet, err := client.NewClient(ctx, baseUrl, sendGridApyKey)
@@ -63,7 +72,7 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 		return nil, err
 	}
 
-	cb, err := connector.New(ctx, sendGridCliet)
+	cb, err := connector.New(ctx, sendGridCliet, sendgridIgnoreSubusers)
 	if err != nil {
 		l.Error("error creating connector", zap.Error(err))
 		return nil, err

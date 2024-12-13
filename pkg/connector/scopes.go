@@ -15,9 +15,8 @@ import (
 
 type scopeBuilder struct {
 	resourceType *v2.ResourceType
-	client       *client.SendGridClient
-
-	scopeCache *scopeCache
+	client       client.SendGridClient
+	scopeCache   *scopeCache
 }
 
 const (
@@ -54,8 +53,8 @@ func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ 
 	var rv []*v2.Entitlement
 	assigmentOptions := []ent.EntitlementOption{
 		ent.WithGrantableTo(userResourceType),
-		ent.WithDescription(fmt.Sprintf("Assigned %s.json to scopes", userResourceType.DisplayName)),
-		ent.WithDisplayName(fmt.Sprintf("%s.json scope %s.json", userResourceType.DisplayName, resource.DisplayName)),
+		ent.WithDescription(fmt.Sprintf("Assigned %s to scopes", userResourceType.DisplayName)),
+		ent.WithDisplayName(fmt.Sprintf("%s scope %s", userResourceType.DisplayName, resource.DisplayName)),
 	}
 	rv = append(rv, ent.NewAssignmentEntitlement(resource, assignedEntitlement, assigmentOptions...))
 
@@ -70,7 +69,7 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	var rv []*v2.Grant
 
 	for _, user := range users {
-		userGrants, err := createGrantToUser(ctx, resource, user)
+		userGrants, err := createGrantToUserFromTeammateScope(ctx, resource, user)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -80,7 +79,18 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 
 	return rv, "", nil, nil
 }
-func newScopeBuilder(c *client.SendGridClient, cache *scopeCache) *scopeBuilder {
+
+func (r *scopeBuilder) Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
 	return &scopeBuilder{
 		resourceType: scopeResourceType,
 		client:       c,
@@ -88,7 +98,7 @@ func newScopeBuilder(c *client.SendGridClient, cache *scopeCache) *scopeBuilder 
 	}
 }
 
-func createGrantToUser(ctx context.Context, resource *v2.Resource, user *client.TeammateScope) ([]*v2.Grant, error) {
+func createGrantToUserFromTeammateScope(ctx context.Context, resource *v2.Resource, user *client.TeammateScope) ([]*v2.Grant, error) {
 	var rv []*v2.Grant
 	l := ctxzap.Extract(ctx)
 
