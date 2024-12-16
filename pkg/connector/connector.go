@@ -3,12 +3,12 @@ package connector
 import (
 	"context"
 	"errors"
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"io"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
 var (

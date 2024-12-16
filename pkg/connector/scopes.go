@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -78,16 +79,6 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	}
 
 	return rv, "", nil, nil
-}
-
-func (r *scopeBuilder) Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	//TODO implement me
-	panic("implement me")
 }
 
 func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {

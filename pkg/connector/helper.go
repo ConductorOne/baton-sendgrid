@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
