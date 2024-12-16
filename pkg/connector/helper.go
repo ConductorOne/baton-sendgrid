@@ -29,7 +29,7 @@ func userResourceFromSubuser(ctx context.Context, subuser *client.Subuser, paren
 
 	ret, err := rs.NewUserResource(
 		subuser.Email,
-		userResourceType,
+		teammateResourceType,
 		// Twilio doesn't have a unique ID for users, so we use the username as the ID
 		subuser.Email,
 		userTraits,
@@ -41,7 +41,7 @@ func userResourceFromSubuser(ctx context.Context, subuser *client.Subuser, paren
 	return ret, nil
 }
 
-func userResource(ctx context.Context, user *client.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func teammateResource(ctx context.Context, user *client.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
 	profile := map[string]interface{}{
@@ -63,7 +63,7 @@ func userResource(ctx context.Context, user *client.Teammate, parentResourceID *
 
 	ret, err := rs.NewUserResource(
 		user.Username,
-		userResourceType,
+		teammateResourceType,
 		// Twilio doesn't have a unique ID for users, so we use the username as the ID
 		user.Username,
 		userTraits,
@@ -99,6 +99,12 @@ func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.Resour
 }
 
 func subuserResource(ctx context.Context, subuser client.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+	status := v2.UserTrait_Status_STATUS_ENABLED
+
+	if subuser.Disabled {
+		status = v2.UserTrait_Status_STATUS_DISABLED
+	}
+
 	profile := map[string]interface{}{
 		"id":       subuser.Id,
 		"username": subuser.Username,
@@ -106,14 +112,16 @@ func subuserResource(ctx context.Context, subuser client.Subuser, parentResource
 		"disabled": subuser.Disabled,
 	}
 
-	subUserTraitOptions := rs.WithAppTrait(
-		rs.WithAppProfile(profile),
+	subUserTraitOptions := rs.WithUserTrait(
+		rs.WithUserProfile(profile),
+		rs.WithStatus(status),
+		rs.WithEmail(subuser.Email, true),
 	)
 
 	resource, err := rs.NewResource(
 		subuser.Username,
 		subuserResourceType,
-		subuser.Email,
+		subuser.Id,
 		subUserTraitOptions,
 	)
 

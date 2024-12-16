@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
 var (
-	ErrHostIsNotValid = errors.New("host is not valid")
-	ErrApiKeyIsEmpty  = errors.New("api key is empty")
+	ErrHostIsNotValid         = errors.New("baton-sendgrid: host is not valid")
+	ErrApiKeyIsEmpty          = errors.New("baton-sendgrid: api key is empty")
+	ErrInvalidPaginationToken = errors.New("baton-sendgrid: invalid pagination token")
 )
 
 var (
@@ -23,15 +26,16 @@ var (
 	SendGridEUBaseUrl = "https://api.eu.sendgrid.com/"
 	AuthHeaderName    = "Authorization"
 
-	RetrieveAllTeammatesEndpoint = "v3/teammates"
-	InviteTeammateEndpoint       = "v3/teammates"
-	DeleteTeammateEndpoint       = "v3/teammates"
-	SpecificTeammateEndpoint     = "v3/teammates/%s"
-	PendingTeammateEndpoint      = "v3/teammates/pending"
+	RetrieveAllTeammatesEndpoint  = "v3/teammates"
+	InviteTeammateEndpoint        = "v3/teammates"
+	DeleteTeammateEndpoint        = "v3/teammates"
+	SpecificTeammateEndpoint      = "v3/teammates/%s"
+	PendingTeammateEndpoint       = "v3/teammates/pending"
+	TeammateSubuserAccessEndpoint = "v3/teammates/%s/subuser_access"
 
 	SubusersEndpoint              = "v3/subusers"
 	SpecificSubusersEndpoint      = "v3/subusers/%s"
-	SubusersWebsiteAccessEndpoint = "/v3/subusers/%s/website_access"
+	SubusersWebsiteAccessEndpoint = "v3/subusers/%s/website_access"
 )
 
 type CustomErrField struct {
@@ -61,10 +65,11 @@ type SendGridClient interface {
 	DeleteTeammate(ctx context.Context, username string) error
 
 	GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error)
-	GetTeammates(ctx context.Context) ([]Teammate, error)
-	GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error)
+	GetTeammates(ctx context.Context, pToken *pagination.Token) ([]Teammate, string, error)
+	GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]TeammateSubuser, string, error)
+	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]PendingUserAccess, string, error)
 
-	GetSubusers(ctx context.Context) ([]Subuser, error)
+	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]Subuser, string, error)
 	CreateSubuser(ctx context.Context, subuser SubuserCreate) error
 	DeleteSubuser(ctx context.Context, username string) error
 	SetSubuserDisabled(ctx context.Context, username string, disabled bool) error
@@ -153,107 +158,119 @@ func (h *SendGridClientImpl) GetSpecificTeammate(ctx context.Context, username s
 
 // GetTeammates List All Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-teammates
-func (h *SendGridClientImpl) GetTeammates(ctx context.Context) ([]Teammate, error) {
-	var response []Teammate
-	offset := 0
+func (h *SendGridClientImpl) GetTeammates(ctx context.Context, pToken *pagination.Token) ([]Teammate, string, error) {
+	var response CommonResponse[[]Teammate]
 
-	var requestResponse CommonResponse[[]Teammate]
-
-	for {
-		uri := h.getUrl(RetrieveAllTeammatesEndpoint)
-		query := uri.Query()
-		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
-		query.Add("offset", fmt.Sprintf("%d", offset))
-
-		uri.RawQuery = query.Encode()
-
-		err := h.doRequest(
-			ctx,
-			http.MethodGet,
-			uri,
-			&requestResponse,
-			nil,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		response = append(response, requestResponse.Result...)
-
-		if len(requestResponse.Result) == 0 {
-			break
-		} else {
-			offset += len(requestResponse.Result)
-		}
+	offset, err := getTokenValue(pToken)
+	if err != nil {
+		return nil, "", err
 	}
 
-	return response, nil
+	uri := h.getUrl(RetrieveAllTeammatesEndpoint)
+	query := uri.Query()
+	query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+	query.Add("offset", fmt.Sprintf("%d", offset))
+
+	uri.RawQuery = query.Encode()
+
+	err = h.doRequest(
+		ctx,
+		http.MethodGet,
+		uri,
+		&response,
+		nil,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return response.Result, nextTokenPage(offset), nil
+}
+
+func (h *SendGridClientImpl) GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]TeammateSubuser, string, error) {
+	var response TeammateSubuserResponse
+
+	uri := h.getUrl(fmt.Sprintf(TeammateSubuserAccessEndpoint, username))
+	query := uri.Query()
+	query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+
+	if pToken.Token != "" {
+		id, err := strconv.Atoi(pToken.Token)
+		if err != nil {
+			return nil, "", err
+		}
+
+		query.Add("after_subuser_id", fmt.Sprintf("%d", id))
+	}
+
+	uri.RawQuery = query.Encode()
+
+	err := h.doRequest(
+		ctx,
+		http.MethodGet,
+		uri,
+		&response,
+		nil,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	nextToken := ""
+
+	if response.Metadata.NextParams.AfterSubuserId != 0 {
+		nextToken = strconv.Itoa(response.Metadata.NextParams.AfterSubuserId)
+	}
+
+	return response.SubuserAccess, nextToken, nil
 }
 
 // GetPendingTeammates List All Pending Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-pending-teammates
-func (h *SendGridClientImpl) GetPendingTeammates(ctx context.Context) ([]PendingUserAccess, error) {
+func (h *SendGridClientImpl) GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]PendingUserAccess, string, error) {
 	var response []PendingUserAccess
 
-	offset := 0
-
-	for {
-		var requestResponse []PendingUserAccess
-
-		uri := h.getUrl(PendingTeammateEndpoint)
-		query := uri.Query()
-		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
-		query.Add("offset", fmt.Sprintf("%d", offset))
-		uri.RawQuery = query.Encode()
-
-		err := h.doRequest(ctx, http.MethodGet, uri, &requestResponse, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		response = append(response, requestResponse...)
-
-		if len(requestResponse) == 0 {
-			break
-		} else {
-			offset += len(requestResponse)
-		}
+	offset, err := getTokenValue(pToken)
+	if err != nil {
+		return nil, "", err
 	}
 
-	return response, nil
+	uri := h.getUrl(PendingTeammateEndpoint)
+	query := uri.Query()
+	query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+	query.Add("offset", fmt.Sprintf("%d", offset))
+	uri.RawQuery = query.Encode()
+
+	err = h.doRequest(ctx, http.MethodGet, uri, &response, nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return response, "", nil
 }
 
 // GetSubusers List All Subusers.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/list-all-subusers
-func (h *SendGridClientImpl) GetSubusers(ctx context.Context) ([]Subuser, error) {
+func (h *SendGridClientImpl) GetSubusers(ctx context.Context, pToken *pagination.Token) ([]Subuser, string, error) {
 	response := make([]Subuser, 0)
 
-	offset := 0
-
-	for {
-		var requestResponse []Subuser
-
-		uri := h.getUrl(SubusersEndpoint)
-		query := uri.Query()
-		query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
-		query.Add("offset", fmt.Sprintf("%d", offset))
-		uri.RawQuery = query.Encode()
-
-		err := h.doRequest(ctx, http.MethodGet, uri, &requestResponse, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		response = append(response, requestResponse...)
-
-		if len(requestResponse) == 0 {
-			break
-		} else {
-			offset += len(requestResponse)
-		}
+	offset, err := getTokenValue(pToken)
+	if err != nil {
+		return nil, "", err
 	}
 
-	return response, nil
+	uri := h.getUrl(SubusersEndpoint)
+	query := uri.Query()
+	query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+	query.Add("offset", fmt.Sprintf("%d", offset))
+	uri.RawQuery = query.Encode()
+
+	err = h.doRequest(ctx, http.MethodGet, uri, &response, nil)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return response, nextTokenPage(offset), nil
 }
 
 // CreateSubuser Create a Subuser.
@@ -305,6 +322,24 @@ func getError(resp *http.Response) (CustomErr, error) {
 	}
 
 	return cErr, nil
+}
+
+func nextTokenPage(offset int) string {
+	return strconv.Itoa(offset + 1)
+}
+
+func getTokenValue(pToken *pagination.Token) (int, error) {
+	token := pToken.Token
+	if token == "" {
+		token = "0"
+	}
+
+	value, err := strconv.Atoi(token)
+	if err != nil {
+		return 0, ErrInvalidPaginationToken
+	}
+
+	return value, nil
 }
 
 func (h *SendGridClientImpl) doRequest(

@@ -60,3 +60,26 @@ type SubuserCreate struct {
 	Region        string   `json:"region"`
 	IncludeRegion bool     `json:"include_region"`
 }
+
+type TeammateSubuser struct {
+	Id             int      `json:"id"`
+	Username       string   `json:"username"`
+	Email          string   `json:"email"`
+	Disabled       bool     `json:"disabled"`
+	PermissionType string   `json:"permission_type"`
+	Scopes         []string `json:"scopes"`
+}
+
+type NextParams struct {
+	Limit          int    `json:"limit"`
+	AfterSubuserId int    `json:"after_subuser_id"`
+	Username       string `json:"username"`
+}
+
+type TeammateSubuserResponse struct {
+	HasRestrictedSubuserAccess bool              `json:"has_restricted_subuser_access"`
+	SubuserAccess              []TeammateSubuser `json:"subuser_access"`
+	Metadata                   struct {
+		NextParams NextParams `json:"next_params,omitempty"`
+	} `json:"_metadata"`
+}

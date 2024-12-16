@@ -53,9 +53,9 @@ func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId
 func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var rv []*v2.Entitlement
 	assigmentOptions := []ent.EntitlementOption{
-		ent.WithGrantableTo(userResourceType),
-		ent.WithDescription(fmt.Sprintf("Assigned %s to scopes", userResourceType.DisplayName)),
-		ent.WithDisplayName(fmt.Sprintf("%s scope %s", userResourceType.DisplayName, resource.DisplayName)),
+		ent.WithGrantableTo(teammateResourceType),
+		ent.WithDescription(fmt.Sprintf("Assigned %s to scopes", teammateResourceType.DisplayName)),
+		ent.WithDisplayName(fmt.Sprintf("%s scope %s", teammateResourceType.DisplayName, resource.DisplayName)),
 	}
 	rv = append(rv, ent.NewAssignmentEntitlement(resource, assignedEntitlement, assigmentOptions...))
 
@@ -70,7 +70,7 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	var rv []*v2.Grant
 
 	for _, user := range users {
-		userGrants, err := createGrantToUserFromTeammateScope(ctx, resource, user)
+		userGrants, err := createGrantToScopeFromTeammateScope(ctx, resource, user)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -89,7 +89,7 @@ func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
 	}
 }
 
-func createGrantToUserFromTeammateScope(ctx context.Context, resource *v2.Resource, user *client.TeammateScope) ([]*v2.Grant, error) {
+func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, user *client.TeammateScope) ([]*v2.Grant, error) {
 	var rv []*v2.Grant
 	l := ctxzap.Extract(ctx)
 
@@ -99,7 +99,7 @@ func createGrantToUserFromTeammateScope(ctx context.Context, resource *v2.Resour
 			continue
 		}
 
-		userR, err := userResource(ctx, &user.Teammate, nil)
+		userR, err := teammateResource(ctx, &user.Teammate, nil)
 		if err != nil {
 			return nil, err
 		}

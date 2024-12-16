@@ -2,7 +2,7 @@ package connector
 
 import (
 	"context"
-
+	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
@@ -25,19 +25,33 @@ func (s *scopeCache) buildCache(ctx context.Context) error {
 	l.Info("Building cache for scopes")
 
 	s.scopeToUser = make(map[string][]*client.TeammateScope)
-	teammates, err := s.client.GetTeammates(ctx)
-	if err != nil {
-		return err
-	}
 
-	for _, teammate := range teammates {
-		specificTeammate, err := s.client.GetSpecificTeammate(ctx, teammate.Username)
+	pToken := "0"
+
+	for pToken != "" {
+		var (
+			teammates []client.Teammate
+			err       error
+		)
+
+		teammates, pToken, err = s.client.GetTeammates(ctx, &pagination.Token{Token: pToken})
 		if err != nil {
 			return err
 		}
 
-		for _, scope := range specificTeammate.Scopes {
-			s.scopeToUser[scope] = append(s.scopeToUser[scope], specificTeammate)
+		if len(teammates) == 0 {
+			break
+		}
+
+		for _, teammate := range teammates {
+			specificTeammate, err := s.client.GetSpecificTeammate(ctx, teammate.Username)
+			if err != nil {
+				return err
+			}
+
+			for _, scope := range specificTeammate.Scopes {
+				s.scopeToUser[scope] = append(s.scopeToUser[scope], specificTeammate)
+			}
 		}
 	}
 
