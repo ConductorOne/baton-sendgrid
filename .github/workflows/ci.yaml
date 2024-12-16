@@ -58,6 +58,9 @@ jobs:
       CONNECTOR_ENTITLEMENT: 'entitlement:group:1234:member'
       CONNECTOR_PRINCIPAL: 'user:9876'
       CONNECTOR_PRINCIPAL_TYPE: 'user'
+
+      BATON_SENDGRID_API_KEY: "${{ secrets.BATON_SENDGRID_API_KEY }}"
+
     steps:
       - name: Install Go
         uses: actions/setup-go@v5
@@ -82,10 +85,8 @@ jobs:
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
 
       - name: Check for grant before revoking
-
         run:
           baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
-
 
       - name: Revoke grants
         run: ./baton-sendgrid --revoke-grant="${{ env.CONNECTOR_GRANT }}"
