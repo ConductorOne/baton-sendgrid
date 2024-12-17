@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -81,6 +80,74 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	return rv, "", nil, nil
 }
 
+// ResourceProvisioner
+
+func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	if principal.Id.ResourceType != teammateResourceType.Id {
+		return nil, nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
+	}
+
+	scopeId := entitlement.Resource.Id.Resource
+	principalUsername := principal.Id.Resource
+
+	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	scopesToSend := append(teammate.Scopes, scopeId)
+
+	err = r.client.SetTeammateScopes(ctx, principalUsername, scopesToSend, teammate.IsAdmin)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	scopeRs, err := scopeResource(ctx, Scope(scopeId), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	grants, err := createGrantToScopeFromTeammateScope(ctx, scopeRs, teammate)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return grants, nil, nil
+}
+
+func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	principal := grant.Principal
+	scopeToRemove := grant.Entitlement.Resource.Id.Resource
+
+	principalUsername := principal.Id.Resource
+
+	if principal.Id.ResourceType != teammateResourceType.Id {
+		return nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
+	}
+
+	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	if err != nil {
+		return nil, err
+	}
+
+	var scopesToSend []string
+
+	for _, scope := range teammate.Scopes {
+		if scope == scopeToRemove {
+			continue
+		}
+
+		scopesToSend = append(scopesToSend, scope)
+	}
+
+	err = r.client.SetTeammateScopes(ctx, principalUsername, scopesToSend, teammate.IsAdmin)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
 func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
 	return &scopeBuilder{
 		resourceType: scopeResourceType,
@@ -89,17 +156,17 @@ func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
 	}
 }
 
-func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, user *client.TeammateScope) ([]*v2.Grant, error) {
+func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, teammate *client.TeammateScope) ([]*v2.Grant, error) {
 	var rv []*v2.Grant
 	l := ctxzap.Extract(ctx)
 
-	for _, scope := range user.Scopes {
+	for _, scope := range teammate.Scopes {
 		if scope == "" {
 			l.Warn("empty scope", zap.String("scope", scope))
 			continue
 		}
 
-		userR, err := teammateResource(ctx, &user.Teammate, nil)
+		userR, err := teammateResource(ctx, &teammate.Teammate, nil)
 		if err != nil {
 			return nil, err
 		}

@@ -26,12 +26,13 @@ var (
 	SendGridEUBaseUrl = "https://api.eu.sendgrid.com/"
 	AuthHeaderName    = "Authorization"
 
-	RetrieveAllTeammatesEndpoint  = "v3/teammates"
-	InviteTeammateEndpoint        = "v3/teammates"
-	DeleteTeammateEndpoint        = "v3/teammates"
-	SpecificTeammateEndpoint      = "v3/teammates/%s"
-	PendingTeammateEndpoint       = "v3/teammates/pending"
-	TeammateSubuserAccessEndpoint = "v3/teammates/%s/subuser_access"
+	RetrieveAllTeammatesEndpoint     = "v3/teammates"
+	InviteTeammateEndpoint           = "v3/teammates"
+	DeleteTeammateEndpoint           = "v3/teammates"
+	SpecificTeammateEndpoint         = "v3/teammates/%s"
+	PendingTeammateEndpoint          = "v3/teammates/pending"
+	TeammateSubuserAccessEndpoint    = "v3/teammates/%s/subuser_access"
+	TeammateUpdatePermissionEndpoint = "/v3/teammates/%s"
 
 	SubusersEndpoint              = "v3/subusers"
 	SpecificSubusersEndpoint      = "v3/subusers/%s"
@@ -68,6 +69,7 @@ type SendGridClient interface {
 	GetTeammates(ctx context.Context, pToken *pagination.Token) ([]Teammate, string, error)
 	GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]TeammateSubuser, string, error)
 	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]PendingUserAccess, string, error)
+	SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error
 
 	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]Subuser, string, error)
 	CreateSubuser(ctx context.Context, subuser SubuserCreate) error
@@ -289,7 +291,7 @@ func (h *SendGridClientImpl) DeleteSubuser(ctx context.Context, username string)
 	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
 }
 
-// SetSubuserAccess Set Subuser Access.
+// SetSubuserDisabled SetSubuserAccess Set Subuser Access.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/enabledisable-website-access-to-a-subuser
 func (h *SendGridClientImpl) SetSubuserDisabled(ctx context.Context, username string, disabled bool) error {
 	uri := h.getUrl(fmt.Sprintf(SubusersWebsiteAccessEndpoint, username))
@@ -298,6 +300,22 @@ func (h *SendGridClientImpl) SetSubuserDisabled(ctx context.Context, username st
 		Disabled bool `json:"disabled"`
 	}{
 		Disabled: disabled,
+	}
+
+	return h.doRequest(ctx, http.MethodPatch, uri, nil, body)
+}
+
+// SetTeammateScopes
+// https://www.twilio.com/docs/sendgrid/api-reference/teammates/update-teammates-permissions
+func (h *SendGridClientImpl) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error {
+	uri := h.getUrl(fmt.Sprintf(TeammateUpdatePermissionEndpoint, username))
+
+	body := struct {
+		Scopes  []string `json:"scopes"`
+		IsAdmin bool     `json:"is_admin"`
+	}{
+		Scopes:  scopes,
+		IsAdmin: isAdmin,
 	}
 
 	return h.doRequest(ctx, http.MethodPatch, uri, nil, body)
