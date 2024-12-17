@@ -18,8 +18,8 @@ jobs:
   go-test:
     strategy:
       matrix:
-        go-version: [1.22.x]
-        platform: [ubuntu-latest]
+        go-version: [ 1.22.x ]
+        platform: [ ubuntu-latest ]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Install Go
@@ -54,10 +54,10 @@ jobs:
       # BATON_ACCESS_TOKEN: 'secret_token'
       # The following parameters are passed to grant/revoke commands
       # Change these to the correct IDs for your test data
-      CONNECTOR_GRANT: 'grant:entitlement:group:1234:member:user:9876'
-      CONNECTOR_ENTITLEMENT: 'entitlement:group:1234:member'
-      CONNECTOR_PRINCIPAL: 'user:9876'
-      CONNECTOR_PRINCIPAL_TYPE: 'user'
+      CONNECTOR_GRANT: 'scope:whitelabel.read:assigned:teammate:baton.test@conductorone.com'
+      CONNECTOR_ENTITLEMENT: 'scope:whitelabel.read:assigned'
+      CONNECTOR_PRINCIPAL: 'baton.test@conductorone.com'
+      CONNECTOR_PRINCIPAL_TYPE: 'teammate'
 
       BATON_SENDGRID_API_KEY: "${{ secrets.BATON_SENDGRID_API_KEY }}"
 

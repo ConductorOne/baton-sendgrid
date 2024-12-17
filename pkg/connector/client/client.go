@@ -389,7 +389,7 @@ func (h *SendGridClientImpl) doRequest(
 		if resp != nil {
 			defer resp.Body.Close()
 		}
-	case http.MethodPost:
+	case http.MethodPost, http.MethodPatch, http.MethodDelete:
 		resp, err = h.httpClient.Do(req)
 		if resp != nil {
 			defer resp.Body.Close()
