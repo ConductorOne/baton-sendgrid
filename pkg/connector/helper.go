@@ -8,39 +8,6 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
-func userResourceFromSubuser(ctx context.Context, subuser *client.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
-	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
-
-	if subuser.Disabled {
-		userStatus = v2.UserTrait_Status_STATUS_DISABLED
-	}
-
-	profile := map[string]interface{}{
-		"username": subuser.Username,
-		"email":    subuser.Email,
-	}
-
-	userTraits := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
-		rs.WithStatus(userStatus),
-		rs.WithEmail(subuser.Email, true),
-		rs.WithUserLogin(subuser.Email),
-	}
-
-	ret, err := rs.NewUserResource(
-		subuser.Email,
-		teammateResourceType,
-		// Twilio doesn't have a unique ID for users, so we use the username as the ID
-		subuser.Email,
-		userTraits,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return ret, nil
-}
-
 func teammateResource(ctx context.Context, user *client.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 

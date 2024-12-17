@@ -3,14 +3,16 @@ package connector
 import (
 	"context"
 	"fmt"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+
+	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
 type scopeBuilder struct {
@@ -95,9 +97,9 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, nil, err
 	}
 
-	scopesToSend := append(teammate.Scopes, scopeId)
+	teammate.Scopes = append(teammate.Scopes, scopeId)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, scopesToSend, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
 	if err != nil {
 		return nil, nil, err
 	}
