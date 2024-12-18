@@ -86,28 +86,28 @@ jobs:
 
       - name: Grant entitlement
         run:
-          baton --grant-entitlement="${{CONNECTOR_ENTITLEMENT}}" --grant-principal="${{CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{CONNECTOR_PRINCIPAL_TYPE}}"
+          ./baton-sendgrid --grant-entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --grant-principal="${{env.CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{env.CONNECTOR_PRINCIPAL_TYPE}}"
 
       - name: Check for grant before revoking
         run:
-          baton grants --entitlement="${{CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{CONNECTOR_PRINCIPAL}}\" )"
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
 
       - name: Revoke grant
         run:
-          baton --revoke-grant="${{CONNECTOR_GRANT}}"
+          ./baton-sendgrid --revoke-grant="${{env.CONNECTOR_GRANT}}"
 
       - name: Revoke already-revoked grant
         run:
-          baton --revoke-grant="${{CONNECTOR_GRANT}}"
+          ./baton-sendgrid --revoke-grant="${{env.CONNECTOR_GRANT}}"
 
       - name: Check for grant after revoking
         run:
-          baton grants --entitlement="${{CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status "if .grants then [ .grants[] | select( .principal.id.resource == \"${{CONNECTOR_PRINCIPAL}}\" ) ] | length == 0 else . end"
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status "if .grants then [ .grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" ) ] | length == 0 else . end"
 
       - name: Re-grant entitlement
         run:
-          baton --grant-entitlement="${{CONNECTOR_ENTITLEMENT}}" --grant-principal="${{CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{CONNECTOR_PRINCIPAL_TYPE}}"
+          ./baton-sendgrid --grant-entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --grant-principal="${{env.CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{env.CONNECTOR_PRINCIPAL_TYPE}}"
 
       - name: Check grant was re-granted
         run:
-          baton grants --entitlement="${{CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{CONNECTOR_PRINCIPAL}}\" )"
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
