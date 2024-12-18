@@ -19,6 +19,8 @@ fi
 # Error on unbound variables now that we've set BATON & BATON_SENDGRID
 set -u
 
+$BATON_SENDGRID
+
 # Grant entitlement
 $BATON_SENDGRID --grant-entitlement="$BATON_ENTITLEMENT" --grant-principal="$BATON_PRINCIPAL" --grant-principal-type="$BATON_PRINCIPAL_TYPE" --log-level debug
 
