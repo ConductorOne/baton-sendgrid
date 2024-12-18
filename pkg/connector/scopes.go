@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -85,6 +86,8 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 // ResourceProvisioner
 
 func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
+
 	if principal.Id.ResourceType != teammateResourceType.Id {
 		return nil, nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
 	}
@@ -95,6 +98,19 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	index := slices.IndexFunc(teammate.Scopes, func(c string) bool {
+		return c == scopeId
+	})
+	if index >= 0 {
+		l.Info(
+			"baton-sendgrid: scope already granted to teammate",
+			zap.String("scope", scopeId),
+			zap.String("teammate", principalUsername),
+		)
+
+		return []*v2.Grant{}, annotations.New(&v2.GrantAlreadyExists{}), nil
 	}
 
 	teammate.Scopes = append(teammate.Scopes, scopeId)
@@ -118,6 +134,8 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 }
 
 func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
+
 	principal := grant.Principal
 	scopeToRemove := grant.Entitlement.Resource.Id.Resource
 
@@ -132,14 +150,24 @@ func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 		return nil, err
 	}
 
+	index := slices.IndexFunc(teammate.Scopes, func(c string) bool {
+		return c == scopeToRemove
+	})
+	if index < 0 {
+		l.Info(
+			"baton-sendgrid: scope not found in teammate",
+			zap.String("scope", scopeToRemove),
+			zap.String("teammate", principalUsername),
+		)
+
+		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
+	}
+
 	var scopesToSend []string
-
-	for _, scope := range teammate.Scopes {
-		if scope == scopeToRemove {
-			continue
-		}
-
-		scopesToSend = append(scopesToSend, scope)
+	if index == 0 {
+		scopesToSend = teammate.Scopes[1:]
+	} else {
+		scopesToSend = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 	}
 
 	err = r.client.SetTeammateScopes(ctx, principalUsername, scopesToSend, teammate.IsAdmin)
