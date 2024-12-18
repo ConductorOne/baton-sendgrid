@@ -163,14 +163,13 @@ func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
 	}
 
-	var scopesToSend []string
 	if index == 0 {
-		scopesToSend = teammate.Scopes[1:]
+		teammate.Scopes = teammate.Scopes[1:]
 	} else {
-		scopesToSend = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
+		teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 	}
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, scopesToSend, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
 	if err != nil {
 		return nil, err
 	}
