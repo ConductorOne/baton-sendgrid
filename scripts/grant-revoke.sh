@@ -22,7 +22,7 @@ set -u
 $BATON_SENDGRID
 
 # Grant entitlement
-$BATON_SENDGRID --grant-entitlement="$BATON_ENTITLEMENT" --grant-principal="$BATON_PRINCIPAL" --grant-principal-type="$BATON_PRINCIPAL_TYPE" --log-level debug
+$BATON_SENDGRID --grant-entitlement="$BATON_ENTITLEMENT" --grant-principal="$BATON_PRINCIPAL" --grant-principal-type="$BATON_PRINCIPAL_TYPE"
 
 # Check for grant before revoking
 $BATON_SENDGRID
