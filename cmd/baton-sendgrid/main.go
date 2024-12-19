@@ -63,7 +63,7 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 		baseUrl = client.SendGridBaseUrl
 	default:
 		baseUrl = client.SendGridBaseUrl
-		l.Warn("invalid sendgrid region", zap.String("region", sendgridRegion))
+		l.Warn("invalid sendgrid region, using the default global URL", zap.String("region", sendgridRegion))
 	}
 
 	sendGridCliet, err := client.NewClient(ctx, baseUrl, sendGridApyKey)

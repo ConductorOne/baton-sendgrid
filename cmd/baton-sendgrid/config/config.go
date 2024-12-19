@@ -20,7 +20,7 @@ var (
 	)
 
 	IgnoreSubusers = field.BoolField(
-		"sendgrid-ignore-subusers",
+		"ignore-subusers",
 		field.WithDefaultValue(false),
 		field.WithDescription("Ignore subusers in the SendGrid account, subusers are an upgraded feature of sendgrid."),
 	)

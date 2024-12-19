@@ -56,6 +56,8 @@ func (s *scopeCache) buildCache(ctx context.Context) error {
 		}
 	}
 
+	l.Info("Cache built for scopes")
+
 	return nil
 }
 
