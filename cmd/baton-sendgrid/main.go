@@ -9,7 +9,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/types"
-	config2 "github.com/conductorone/baton-sendgrid/cmd/baton-sendgrid/config"
 	"github.com/conductorone/baton-sendgrid/pkg/connector"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -27,7 +26,7 @@ func main() {
 		"baton-sendgrid",
 		getConnector,
 		field.Configuration{
-			Fields: config2.ConfigurationFields,
+			Fields: ConfigurationFields,
 		},
 	)
 	if err != nil {
@@ -46,13 +45,13 @@ func main() {
 
 func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, error) {
 	l := ctxzap.Extract(ctx)
-	if err := config2.ValidateConfig(v); err != nil {
+	if err := ValidateConfig(v); err != nil {
 		return nil, err
 	}
 
-	sendGridApyKey := v.GetString(config2.SendGridApiKeyField.GetName())
-	sendgridRegion := v.GetString(config2.SendGridRegionField.GetName())
-	sendgridIgnoreSubusers := v.GetBool(config2.IgnoreSubusers.GetName())
+	sendGridApyKey := v.GetString(SendGridApiKeyField.GetName())
+	sendgridRegion := v.GetString(SendGridRegionField.GetName())
+	sendgridIgnoreSubusers := v.GetBool(IgnoreSubusers.GetName())
 
 	var baseUrl string
 
