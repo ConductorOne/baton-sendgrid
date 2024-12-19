@@ -2,13 +2,13 @@ package connector
 
 import (
 	"context"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
-func teammateResource(ctx context.Context, user *client.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func teammateResource(ctx context.Context, user *models.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
 	profile := map[string]interface{}{
@@ -65,7 +65,7 @@ func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.Resour
 	return resource, nil
 }
 
-func subuserResource(ctx context.Context, subuser client.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func subuserResource(ctx context.Context, subuser models.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
 	status := v2.UserTrait_Status_STATUS_ENABLED
 
 	if subuser.Disabled {

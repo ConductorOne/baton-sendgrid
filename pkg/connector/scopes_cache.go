@@ -2,21 +2,21 @@ package connector
 
 import (
 	"context"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
 type scopeCache struct {
-	client      client.SendGridClient
-	scopeToUser map[string][]*client.TeammateScope
+	client      SendGridClient
+	scopeToUser map[string][]*models.TeammateScope
 }
 
-func newScopeCache(gridClient client.SendGridClient) *scopeCache {
+func newScopeCache(gridClient SendGridClient) *scopeCache {
 	return &scopeCache{
 		client:      gridClient,
-		scopeToUser: make(map[string][]*client.TeammateScope),
+		scopeToUser: make(map[string][]*models.TeammateScope),
 	}
 }
 
@@ -25,13 +25,13 @@ func (s *scopeCache) buildCache(ctx context.Context) error {
 
 	l.Info("Building cache for scopes")
 
-	s.scopeToUser = make(map[string][]*client.TeammateScope)
+	s.scopeToUser = make(map[string][]*models.TeammateScope)
 
 	pToken := "0"
 
 	for pToken != "" {
 		var (
-			teammates []client.Teammate
+			teammates []models.Teammate
 			err       error
 		)
 
@@ -61,12 +61,12 @@ func (s *scopeCache) buildCache(ctx context.Context) error {
 	return nil
 }
 
-func (s *scopeCache) GetUsersForScope(scope string) []*client.TeammateScope {
+func (s *scopeCache) GetUsersForScope(scope string) []*models.TeammateScope {
 	users, ok := s.scopeToUser[scope]
 
 	if ok {
 		return users
 	}
 
-	return []*client.TeammateScope{}
+	return []*models.TeammateScope{}
 }

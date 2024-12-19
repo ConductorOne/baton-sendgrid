@@ -1,4 +1,4 @@
-package client
+package models
 
 type CommonResponse[T any] struct {
 	Result T `json:"result"`

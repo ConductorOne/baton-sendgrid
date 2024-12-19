@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -10,7 +11,6 @@ import (
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -20,7 +20,7 @@ const (
 )
 
 type teammateBuilder struct {
-	client client.SendGridClient
+	client SendGridClient
 }
 
 func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -87,13 +87,13 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, pTo
 	return rv, nextToken, nil, nil
 }
 
-func newTeammateBuilder(client client.SendGridClient) *teammateBuilder {
+func newTeammateBuilder(client SendGridClient) *teammateBuilder {
 	return &teammateBuilder{
 		client: client,
 	}
 }
 
-func createGrantSubuserFromTeammate(ctx context.Context, resource *v2.Resource, subAcess *client.TeammateSubuser) ([]*v2.Grant, error) {
+func createGrantSubuserFromTeammate(ctx context.Context, resource *v2.Resource, subAcess *models.TeammateSubuser) ([]*v2.Grant, error) {
 	userId, err := rs.NewResourceID(subuserResourceType, subAcess.Id)
 	if err != nil {
 		return nil, err

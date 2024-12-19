@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,7 +17,6 @@ import (
 )
 
 var (
-	ErrHostIsNotValid         = errors.New("baton-sendgrid: host is not valid")
 	ErrApiKeyIsEmpty          = errors.New("baton-sendgrid: api key is empty")
 	ErrInvalidPaginationToken = errors.New("baton-sendgrid: invalid pagination token")
 )
@@ -61,31 +61,15 @@ func (c CustomErr) Error() error {
 	return errors.Join(errorsResult...)
 }
 
-type SendGridClient interface {
-	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error
-	DeleteTeammate(ctx context.Context, username string) error
-
-	GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error)
-	GetTeammates(ctx context.Context, pToken *pagination.Token) ([]Teammate, string, error)
-	GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]TeammateSubuser, string, error)
-	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]PendingUserAccess, string, error)
-	SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error
-
-	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]Subuser, string, error)
-	CreateSubuser(ctx context.Context, subuser SubuserCreate) error
-	DeleteSubuser(ctx context.Context, username string) error
-	SetSubuserDisabled(ctx context.Context, username string, disabled bool) error
-}
-
-// SendGridClientImpl is a client for the SendGrid API.
-type SendGridClientImpl struct {
+// SendGridClient is a client for the SendGrid API.
+type SendGridClient struct {
 	httpClient *uhttp.BaseHttpClient
 	baseUrl    *url.URL
 	apiKey     string
 	pageLimit  int
 }
 
-func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClientImpl, error) {
+func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, error) {
 	parseBaseUrl, err := url.Parse(baseUrl)
 	if err != nil {
 		return nil, err
@@ -105,7 +89,7 @@ func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClientImpl
 		return nil, err
 	}
 
-	return &SendGridClientImpl{
+	return &SendGridClient{
 		httpClient: uhtppClient,
 		baseUrl:    parseBaseUrl,
 		apiKey:     apiKey,
@@ -115,7 +99,7 @@ func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClientImpl
 
 // InviteTeammate Invite a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/invite-teammate
-func (h *SendGridClientImpl) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
+func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
 	uri := h.getUrl(InviteTeammateEndpoint)
 
 	bodyPost := struct {
@@ -133,16 +117,16 @@ func (h *SendGridClientImpl) InviteTeammate(ctx context.Context, email string, s
 
 // DeleteTeammate Delete a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-teammate
-func (h *SendGridClientImpl) DeleteTeammate(ctx context.Context, username string) error {
+func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string) error {
 	uri := h.getUrl(DeleteTeammateEndpoint).JoinPath(username)
 
 	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
 }
 
 // GetSpecificTeammate Retrieve a specific teammate with scopes.
-func (h *SendGridClientImpl) GetSpecificTeammate(ctx context.Context, username string) (*TeammateScope, error) {
+func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username string) (*models.TeammateScope, error) {
 	uri := h.getUrl(fmt.Sprintf(SpecificTeammateEndpoint, username))
-	var requestResponse TeammateScope
+	var requestResponse models.TeammateScope
 
 	err := h.doRequest(
 		ctx,
@@ -160,8 +144,8 @@ func (h *SendGridClientImpl) GetSpecificTeammate(ctx context.Context, username s
 
 // GetTeammates List All Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-teammates
-func (h *SendGridClientImpl) GetTeammates(ctx context.Context, pToken *pagination.Token) ([]Teammate, string, error) {
-	var response CommonResponse[[]Teammate]
+func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.Token) ([]models.Teammate, string, error) {
+	var response models.CommonResponse[[]models.Teammate]
 
 	offset, err := getTokenValue(pToken)
 	if err != nil {
@@ -189,8 +173,8 @@ func (h *SendGridClientImpl) GetTeammates(ctx context.Context, pToken *paginatio
 	return response.Result, nextTokenPage(offset), nil
 }
 
-func (h *SendGridClientImpl) GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]TeammateSubuser, string, error) {
-	var response TeammateSubuserResponse
+func (h *SendGridClient) GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]models.TeammateSubuser, string, error) {
+	var response models.TeammateSubuserResponse
 
 	uri := h.getUrl(fmt.Sprintf(TeammateSubuserAccessEndpoint, username))
 	query := uri.Query()
@@ -229,8 +213,8 @@ func (h *SendGridClientImpl) GetTeammatesSubAccess(ctx context.Context, username
 
 // GetPendingTeammates List All Pending Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-pending-teammates
-func (h *SendGridClientImpl) GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]PendingUserAccess, string, error) {
-	var response []PendingUserAccess
+func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]models.PendingUserAccess, string, error) {
+	var response []models.PendingUserAccess
 
 	offset, err := getTokenValue(pToken)
 	if err != nil {
@@ -253,8 +237,8 @@ func (h *SendGridClientImpl) GetPendingTeammates(ctx context.Context, pToken *pa
 
 // GetSubusers List All Subusers.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/list-all-subusers
-func (h *SendGridClientImpl) GetSubusers(ctx context.Context, pToken *pagination.Token) ([]Subuser, string, error) {
-	response := make([]Subuser, 0)
+func (h *SendGridClient) GetSubusers(ctx context.Context, pToken *pagination.Token) ([]models.Subuser, string, error) {
+	response := make([]models.Subuser, 0)
 
 	offset, err := getTokenValue(pToken)
 	if err != nil {
@@ -277,7 +261,7 @@ func (h *SendGridClientImpl) GetSubusers(ctx context.Context, pToken *pagination
 
 // CreateSubuser Create a Subuser.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/create-subuser
-func (h *SendGridClientImpl) CreateSubuser(ctx context.Context, subuser SubuserCreate) error {
+func (h *SendGridClient) CreateSubuser(ctx context.Context, subuser models.SubuserCreate) error {
 	uri := h.getUrl(SubusersEndpoint)
 
 	return h.doRequest(ctx, http.MethodPost, uri, nil, subuser)
@@ -285,7 +269,7 @@ func (h *SendGridClientImpl) CreateSubuser(ctx context.Context, subuser SubuserC
 
 // DeleteSubuser Delete a Subuser.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/delete-a-subuser
-func (h *SendGridClientImpl) DeleteSubuser(ctx context.Context, username string) error {
+func (h *SendGridClient) DeleteSubuser(ctx context.Context, username string) error {
 	uri := h.getUrl(fmt.Sprintf(SpecificSubusersEndpoint, username))
 
 	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
@@ -293,7 +277,7 @@ func (h *SendGridClientImpl) DeleteSubuser(ctx context.Context, username string)
 
 // SetSubuserDisabled SetSubuserAccess Set Subuser Access.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/enabledisable-website-access-to-a-subuser
-func (h *SendGridClientImpl) SetSubuserDisabled(ctx context.Context, username string, disabled bool) error {
+func (h *SendGridClient) SetSubuserDisabled(ctx context.Context, username string, disabled bool) error {
 	uri := h.getUrl(fmt.Sprintf(SubusersWebsiteAccessEndpoint, username))
 
 	body := struct {
@@ -307,7 +291,7 @@ func (h *SendGridClientImpl) SetSubuserDisabled(ctx context.Context, username st
 
 // SetTeammateScopes
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/update-teammates-permissions
-func (h *SendGridClientImpl) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error {
+func (h *SendGridClient) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error {
 	uri := h.getUrl(fmt.Sprintf(TeammateUpdatePermissionEndpoint, username))
 
 	body := struct {
@@ -323,7 +307,7 @@ func (h *SendGridClientImpl) SetTeammateScopes(ctx context.Context, username str
 
 // Helpers
 
-func (h *SendGridClientImpl) getUrl(endPoint string) *url.URL {
+func (h *SendGridClient) getUrl(endPoint string) *url.URL {
 	return h.baseUrl.JoinPath(endPoint)
 }
 
@@ -360,7 +344,7 @@ func getTokenValue(pToken *pagination.Token) (int, error) {
 	return value, nil
 }
 
-func (h *SendGridClientImpl) doRequest(
+func (h *SendGridClient) doRequest(
 	ctx context.Context,
 	method string,
 	urlAddress *url.URL,

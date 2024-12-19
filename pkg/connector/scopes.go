@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 	"slices"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -12,13 +13,11 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
-
-	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 )
 
 type scopeBuilder struct {
 	resourceType *v2.ResourceType
-	client       client.SendGridClient
+	client       SendGridClient
 	scopeCache   *scopeCache
 }
 
@@ -177,7 +176,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	return nil, nil
 }
 
-func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
+func newScopeBuilder(c SendGridClient, cache *scopeCache) *scopeBuilder {
 	return &scopeBuilder{
 		resourceType: scopeResourceType,
 		client:       c,
@@ -185,7 +184,7 @@ func newScopeBuilder(c client.SendGridClient, cache *scopeCache) *scopeBuilder {
 	}
 }
 
-func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, teammate *client.TeammateScope) ([]*v2.Grant, error) {
+func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, teammate *models.TeammateScope) ([]*v2.Grant, error) {
 	var rv []*v2.Grant
 	l := ctxzap.Extract(ctx)
 
