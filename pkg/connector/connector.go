@@ -3,9 +3,10 @@ package connector
 import (
 	"context"
 	"errors"
+	"io"
+
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
-	"io"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"

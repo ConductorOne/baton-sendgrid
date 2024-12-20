@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	"github.com/conductorone/baton-sdk/pkg/pagination"
