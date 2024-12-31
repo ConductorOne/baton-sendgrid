@@ -18,8 +18,8 @@ jobs:
   go-test:
     strategy:
       matrix:
-        go-version: [1.22.x]
-        platform: [ubuntu-latest]
+        go-version: [ 1.22.x ]
+        platform: [ ubuntu-latest ]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Install Go
@@ -54,10 +54,13 @@ jobs:
       # BATON_ACCESS_TOKEN: 'secret_token'
       # The following parameters are passed to grant/revoke commands
       # Change these to the correct IDs for your test data
-      CONNECTOR_GRANT: 'grant:entitlement:group:1234:member:user:9876'
-      CONNECTOR_ENTITLEMENT: 'entitlement:group:1234:member'
-      CONNECTOR_PRINCIPAL: 'user:9876'
-      CONNECTOR_PRINCIPAL_TYPE: 'user'
+      CONNECTOR_GRANT: 'scope:whitelabel.read:assigned:teammate:${{secrets.BATON_SENDGRID_EMAIL}}'
+      CONNECTOR_ENTITLEMENT: 'scope:whitelabel.read:assigned'
+      CONNECTOR_PRINCIPAL: '${{ secrets.BATON_SENDGRID_EMAIL }}'
+      CONNECTOR_PRINCIPAL_TYPE: 'teammate'
+
+      BATON_SENDGRID_API_KEY: "${{ secrets.BATON_SENDGRID_API_KEY }}"
+
     steps:
       - name: Install Go
         uses: actions/setup-go@v5
@@ -81,24 +84,30 @@ jobs:
       - name: Install baton
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
 
-      - name: Check for grant before revoking
-
-        run:
-          baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
-
-
-      - name: Revoke grants
-        run: ./baton-sendgrid --revoke-grant="${{ env.CONNECTOR_GRANT }}"
-
-      - name: Check grant was revoked
-        run: ./baton-sendgrid && baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status "if .grants then .grants[]?.principal.id.resource != \"${{ env.CONNECTOR_PRINCIPAL }}\" else . end"
-
       - name: Grant entitlement
-        # Change the grant arguments to the correct IDs for your test data
-        run: ./baton-sendgrid --grant-entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --grant-principal="${{ env.CONNECTOR_PRINCIPAL }}" --grant-principal-type="${{ env.CONNECTOR_PRINCIPAL_TYPE }}"
+        run:
+          ./baton-sendgrid --grant-entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --grant-principal="${{env.CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{env.CONNECTOR_PRINCIPAL_TYPE}}"
+
+      - name: Check for grant before revoking
+        run:
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
+
+      - name: Revoke grant
+        run:
+          ./baton-sendgrid --revoke-grant="${{env.CONNECTOR_GRANT}}"
+
+      - name: Revoke already-revoked grant
+        run:
+          ./baton-sendgrid --revoke-grant="${{env.CONNECTOR_GRANT}}"
+
+      - name: Check for grant after revoking
+        run:
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status "if .grants then [ .grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" ) ] | length == 0 else . end"
+
+      - name: Re-grant entitlement
+        run:
+          ./baton-sendgrid --grant-entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --grant-principal="${{env.CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{env.CONNECTOR_PRINCIPAL_TYPE}}"
 
       - name: Check grant was re-granted
-
         run:
-          baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
-
+          ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
