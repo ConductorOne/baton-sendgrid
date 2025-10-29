@@ -50,7 +50,27 @@ baton resources
 
 `baton-sendgrid` will pull down information about the following resources:
 
-- Users
+- Teammates
+- Teammate Invitations (pending invitations)
+- Subusers (if not using `--ignore-subusers`)
+- Scopes
+
+# Provisioning & Deprovisioning
+
+`baton-sendgrid` supports provisioning and deprovisioning capabilities when the `--provisioning` flag is enabled:
+
+## Teammate Invitations
+- **Provision (Create)**: Invite new teammates by email with optional scopes and admin permissions
+- **Deprovision (Delete)**: Revoke pending teammate invitations
+
+## Teammates
+- **Deprovision (Delete)**: Remove existing teammates from the SendGrid account
+
+To enable provisioning capabilities, run the connector with the `-p` or `--provisioning` flag:
+
+```bash
+baton-sendgrid --sendgrid-api-key=<your-api-key> --provisioning
+```
 
 # Contributing, Support and Issues
 

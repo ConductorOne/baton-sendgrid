@@ -195,7 +195,7 @@ func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resou
 			continue
 		}
 
-		userR, err := teammateResource(ctx, &teammate.Teammate, nil)
+		userR, err := teammateResource(&teammate.Teammate, nil)
 		if err != nil {
 			return nil, err
 		}

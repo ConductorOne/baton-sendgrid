@@ -99,8 +99,9 @@ func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, er
 
 // InviteTeammate Invite a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/invite-teammate
-func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error {
+func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) (*models.TeammateInvitation, error) {
 	uri := h.getUrl(InviteTeammateEndpoint)
+	var response models.TeammateInvitation
 
 	bodyPost := struct {
 		Email   string   `json:"email"`
@@ -112,10 +113,14 @@ func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scope
 		IsAdmin: isAdmin,
 	}
 
-	return h.doRequest(ctx, http.MethodPost, uri, nil, bodyPost)
+	err := h.doRequest(ctx, http.MethodPost, uri, &response, bodyPost)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }
 
-// DeleteTeammate Delete a teammate.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-teammate
 func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string) error {
 	uri := h.getUrl(DeleteTeammateEndpoint).JoinPath(username)
@@ -213,8 +218,8 @@ func (h *SendGridClient) GetTeammatesSubAccess(ctx context.Context, username str
 
 // GetPendingTeammates List All Pending Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-pending-teammates
-func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]models.PendingUserAccess, string, error) {
-	var response []models.PendingUserAccess
+func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]*models.TeammateInvitation, string, error) {
+	var response models.CommonResponse[[]*models.TeammateInvitation]
 
 	offset, err := getTokenValue(pToken)
 	if err != nil {
@@ -232,7 +237,15 @@ func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagina
 		return nil, "", err
 	}
 
-	return response, "", nil
+	return response.Result, nextTokenPage(offset), nil
+}
+
+// DeletePendingTeammate Delete a pending teammate invitation.
+// https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-pending-teammate
+func (h *SendGridClient) DeletePendingTeammate(ctx context.Context, token string) error {
+	uri := h.getUrl(PendingTeammateEndpoint).JoinPath(token)
+
+	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
 }
 
 // GetSubusers List All Subusers.

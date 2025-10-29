@@ -18,13 +18,14 @@ var (
 )
 
 type SendGridClient interface {
-	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) error
-	DeleteTeammate(ctx context.Context, username string) error
+	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) (*models.TeammateInvitation, error)
 
 	GetSpecificTeammate(ctx context.Context, username string) (*models.TeammateScope, error)
 	GetTeammates(ctx context.Context, pToken *pagination.Token) ([]models.Teammate, string, error)
+	DeleteTeammate(ctx context.Context, username string) error
 	GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]models.TeammateSubuser, string, error)
-	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]models.PendingUserAccess, string, error)
+	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]*models.TeammateInvitation, string, error)
+	DeletePendingTeammate(ctx context.Context, token string) error
 	SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error
 
 	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]models.Subuser, string, error)
@@ -43,6 +44,7 @@ type Connector struct {
 func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	return []connectorbuilder.ResourceSyncer{
 		newTeammateBuilder(d.client),
+		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client, d.scopeCache),
 		newSubuserBuilder(d.client, d.ignoreSubusers),
 	}
