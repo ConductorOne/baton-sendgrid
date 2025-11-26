@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +10,7 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
-func teammateResource(user *models.Teammate, _ *v2.ResourceId) (*v2.Resource, error) {
+func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
 	profile := map[string]interface{}{
@@ -45,7 +44,7 @@ func teammateResource(user *models.Teammate, _ *v2.ResourceId) (*v2.Resource, er
 	return ret, nil
 }
 
-func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func scopeResource(scope Scope) (*v2.Resource, error) {
 	profile := map[string]interface{}{
 		"name": string(scope),
 	}
@@ -68,7 +67,7 @@ func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.Resour
 	return resource, nil
 }
 
-func subuserResource(subuser models.Subuser, _ *v2.ResourceId) (*v2.Resource, error) {
+func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	status := v2.UserTrait_Status_STATUS_ENABLED
 
 	if subuser.Disabled {
@@ -104,6 +103,11 @@ func subuserResource(subuser models.Subuser, _ *v2.ResourceId) (*v2.Resource, er
 
 func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Resource, error) {
 	resourceID := strings.TrimSpace(invitation.Token)
+
+	// Validate that the token is not empty after trimming
+	if resourceID == "" {
+		return nil, fmt.Errorf("teammateInvitationResource: empty invitation token")
+	}
 
 	// Convert []string to []interface{} for protobuf compatibility
 	scopes := make([]interface{}, len(invitation.Scopes))

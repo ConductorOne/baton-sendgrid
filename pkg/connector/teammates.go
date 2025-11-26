@@ -37,7 +37,7 @@ func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 
 	rv := make([]*v2.Resource, len(teammates))
 	for i, teammate := range teammates {
-		us, err := teammateResource(&teammate, nil)
+		us, err := teammateResource(&teammate)
 		if err != nil {
 			return nil, "", nil, err
 		}
