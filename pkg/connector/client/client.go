@@ -380,17 +380,16 @@ func (h *SendGridClient) doRequest(
 		return err
 	}
 
-	switch method {
-	case http.MethodGet:
-		resp, err = h.httpClient.Do(req, uhttp.WithResponse(&res))
-		if resp != nil {
-			defer resp.Body.Close()
-		}
-	case http.MethodPost, http.MethodPatch, http.MethodDelete:
-		resp, err = h.httpClient.Do(req)
-		if resp != nil {
-			defer resp.Body.Close()
-		}
+	// Build request options
+	doOptions := []uhttp.DoOption{}
+	// If the response target is not nil, unmarshal the response into it
+	if res != nil {
+		doOptions = append(doOptions, uhttp.WithResponse(&res))
+	}
+
+	resp, err = h.httpClient.Do(req, doOptions...)
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 
 	if resp != nil {

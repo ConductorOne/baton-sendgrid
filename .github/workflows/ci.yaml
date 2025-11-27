@@ -115,7 +115,7 @@ jobs:
           ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
 
       - name: Test Teammate Invitation - Account Provisioning 
-        uses: ConductorOne/github-workflows/actions/account-provisioning@v3.1.0
+        uses: ConductorOne/github-workflows/actions/account-provisioning@v3
         with:
           connector: ./baton-sendgrid
           account-email: ${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}
