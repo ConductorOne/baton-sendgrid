@@ -10,7 +10,6 @@ import (
 func TestConfigs(t *testing.T) {
 	configurationSchema := field.NewConfiguration(
 		ConfigurationFields,
-		FieldRelationships...,
 	)
 
 	testCases := []test.TestCase{

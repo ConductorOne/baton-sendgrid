@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
@@ -36,7 +37,7 @@ func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 
 	rv := make([]*v2.Resource, len(teammates))
 	for i, teammate := range teammates {
-		us, err := teammateResource(ctx, &teammate, nil)
+		us, err := teammateResource(&teammate)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -77,7 +78,7 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, pTo
 	logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
 
 	for _, subAcess := range access {
-		grants, err := createGrantSubuserFromTeammate(ctx, resource, &subAcess)
+		grants, err := createGrantSubuserFromTeammate(resource, &subAcess)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -88,13 +89,39 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, pTo
 	return rv, nextToken, nil, nil
 }
 
+// Delete implements the ResourceDeleter interface for teammates.
+func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
+
+	if resourceId.ResourceType != teammateResourceType.Id {
+		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateResourceType.Id, resourceId.ResourceType)
+	}
+
+	username := resourceId.GetResource()
+	if username == "" {
+		return nil, fmt.Errorf("missing resource ID (username)")
+	}
+
+	if err := u.client.DeleteTeammate(ctx, username); err != nil {
+		// Check if it's a "not found" error from SendGrid
+		if strings.Contains(err.Error(), "teammate does not exist") {
+			l.Warn("Teammate not found, may have been already deleted")
+			return nil, nil
+		}
+		l.Error("failed to delete teammate", zap.Error(err))
+		return nil, err
+	}
+
+	return nil, nil
+}
+
 func newTeammateBuilder(client SendGridClient) *teammateBuilder {
 	return &teammateBuilder{
 		client: client,
 	}
 }
 
-func createGrantSubuserFromTeammate(ctx context.Context, resource *v2.Resource, subAcess *models.TeammateSubuser) ([]*v2.Grant, error) {
+func createGrantSubuserFromTeammate(resource *v2.Resource, subAcess *models.TeammateSubuser) ([]*v2.Grant, error) {
 	userId, err := rs.NewResourceID(subuserResourceType, subAcess.Id)
 	if err != nil {
 		return nil, err

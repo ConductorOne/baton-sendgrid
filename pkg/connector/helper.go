@@ -1,7 +1,8 @@
 package connector
 
 import (
-	"context"
+	"fmt"
+	"strings"
 
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
@@ -9,7 +10,7 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
-func teammateResource(ctx context.Context, user *models.Teammate, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
 	profile := map[string]interface{}{
@@ -43,7 +44,7 @@ func teammateResource(ctx context.Context, user *models.Teammate, parentResource
 	return ret, nil
 }
 
-func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func scopeResource(scope Scope) (*v2.Resource, error) {
 	profile := map[string]interface{}{
 		"name": string(scope),
 	}
@@ -66,7 +67,7 @@ func scopeResource(ctx context.Context, scope Scope, parentResourceID *v2.Resour
 	return resource, nil
 }
 
-func subuserResource(ctx context.Context, subuser models.Subuser, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	status := v2.UserTrait_Status_STATUS_ENABLED
 
 	if subuser.Disabled {
@@ -98,4 +99,45 @@ func subuserResource(ctx context.Context, subuser models.Subuser, parentResource
 	}
 
 	return resource, nil
+}
+
+func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Resource, error) {
+	resourceID := strings.TrimSpace(invitation.Token)
+
+	// Validate that the token is not empty after trimming
+	if resourceID == "" {
+		return nil, fmt.Errorf("teammateInvitationResource: empty invitation token")
+	}
+
+	// Convert []string to []interface{} for protobuf compatibility
+	scopes := make([]interface{}, len(invitation.Scopes))
+	for i, scope := range invitation.Scopes {
+		scopes[i] = scope
+	}
+
+	profile := map[string]interface{}{
+		"token":           invitation.Token,
+		"scopes":          scopes,
+		"is_admin":        invitation.IsAdmin,
+		"expiration_date": invitation.ExpirationDate,
+	}
+
+	userTraits := []rs.UserTraitOption{
+		rs.WithUserProfile(profile),
+		rs.WithStatus(v2.UserTrait_Status_STATUS_DISABLED), // Pending invitations are always in a "Disabled" status
+		rs.WithEmail(invitation.Email, true),
+		rs.WithUserLogin(invitation.Email),
+	}
+
+	ret, err := rs.NewUserResource(
+		"(Invitation) "+invitation.Email,
+		teammateInvitationResourceType,
+		resourceID,
+		userTraits,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create teammate invitation resource: %w", err)
+	}
+
+	return ret, nil
 }

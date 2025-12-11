@@ -36,13 +36,12 @@ type PaginationData struct {
 	Username       string `json:"username"`
 }
 
-type PendingUserAccess struct {
-	Id             int    `json:"id"`
-	ScopeGroupName string `json:"scope_group_name"`
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	FirstName      string `json:"first_name"`
-	LastName       string `json:"last_name"`
+type TeammateInvitation struct {
+	Email          string   `json:"email"`
+	Scopes         []string `json:"scopes"`
+	IsAdmin        bool     `json:"is_admin"`
+	Token          string   `json:"token"`
+	ExpirationDate int64    `json:"expiration_date"`
 }
 
 type Subuser struct {

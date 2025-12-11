@@ -39,7 +39,7 @@ func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.Resource
 	}
 
 	for _, subuser := range subusers {
-		rb, err := subuserResource(ctx, subuser, nil)
+		rb, err := subuserResource(subuser)
 		if err != nil {
 			return nil, "", nil, err
 		}

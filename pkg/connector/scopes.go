@@ -41,7 +41,7 @@ func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId
 	rv := make([]*v2.Resource, len(SendGridScopes))
 
 	for i, scope := range SendGridScopes {
-		rb, err := scopeResource(ctx, scope, nil)
+		rb, err := scopeResource(scope)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -120,7 +120,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, nil, err
 	}
 
-	scopeRs, err := scopeResource(ctx, Scope(scopeId), nil)
+	scopeRs, err := scopeResource(Scope(scopeId))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -195,7 +195,7 @@ func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resou
 			continue
 		}
 
-		userR, err := teammateResource(ctx, &teammate.Teammate, nil)
+		userR, err := teammateResource(&teammate.Teammate)
 		if err != nil {
 			return nil, err
 		}

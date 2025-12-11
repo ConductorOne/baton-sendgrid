@@ -1,42 +1,44 @@
 name: ci
-on: pull_request
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches:
+      - main
 jobs:
   go-lint:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.22.x
-      - name: Checkout code
-        uses: actions/checkout@v4
+          go-version-file: go.mod
       - name: Run linters
-        uses: golangci/golangci-lint-action@v5
+        uses: golangci/golangci-lint-action@v8
         with:
           version: latest
           args: --timeout=3m
   go-test:
     strategy:
       matrix:
-        go-version: [ 1.22.x ]
-        platform: [ ubuntu-latest ]
+        platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Install Go
-        if: success()
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go-version }}
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: go tests
-        run: (set -o pipefail && go test -v -covermode=count -json ./... | tee test.json)
+        run: (set -o pipefail && go test -v -covermode=atomic -json ./... | tee test.json)
       - name: annotate go tests
         if: always()
         uses: guyarb/golang-test-annotations@v0.5.1
         with:
           test-results: test.json
-
   test:
     runs-on: ubuntu-latest
     # Define any services needed for the test suite (or delete this section)
@@ -111,3 +113,11 @@ jobs:
       - name: Check grant was re-granted
         run:
           ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
+
+      - name: Test Teammate Invitation - Account Provisioning 
+        uses: ConductorOne/github-workflows/actions/account-provisioning@v3
+        with:
+          connector: ./baton-sendgrid
+          account-email: ${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}
+          account-profile: '{"email":"${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}", "scopes":["user.profile.read","user.profile.update"],"is_admin":"false"}'
+          account-type: "teammate_invitation"
