@@ -100,22 +100,40 @@ func (u *teammateInvitationBuilder) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("email is required to create a teammate invitation")
 	}
 
-	// Optional inputs from profile: scopes ([]string) and is_admin (bool).
+	// Optional inputs from profile: is_admin and scopes.
+	// Note: SendGrid API does not allow specifying scopes when teammate is an admin.
+	// Admin teammates automatically have full access to all permissions.
 	var scopes []string
 	isAdmin := false
+
 	if accountInfo.GetProfile() != nil {
-		if v, ok := accountInfo.GetProfile().AsMap()["scopes"]; ok {
-			if list, ok := v.([]interface{}); ok {
-				for _, it := range list {
-					if s, ok := it.(string); ok && s != "" {
+		profileMap := accountInfo.GetProfile().AsMap()
+
+		// Parse is_admin (BoolField).
+		if v, ok := profileMap["is_admin"]; ok {
+			adminVal, ok := v.(bool)
+			if !ok {
+				return nil, nil, nil, fmt.Errorf("is_admin must be a boolean, got %T", v)
+			}
+			isAdmin = adminVal
+		}
+
+		// Parse scopes only if not an admin (SendGrid constraint: cannot specify scopes for admins).
+		if !isAdmin {
+			if v, ok := profileMap["scopes"]; ok {
+				scopeList, ok := v.([]interface{})
+				if !ok {
+					return nil, nil, nil, fmt.Errorf("scopes must be a list, got %T", v)
+				}
+				for _, item := range scopeList {
+					s, ok := item.(string)
+					if !ok {
+						return nil, nil, nil, fmt.Errorf("scope item must be a string, got %T", item)
+					}
+					if s != "" {
 						scopes = append(scopes, s)
 					}
 				}
-			}
-		}
-		if v, ok := accountInfo.GetProfile().AsMap()["is_admin"]; ok {
-			if b, ok := v.(bool); ok {
-				isAdmin = b
 			}
 		}
 	}

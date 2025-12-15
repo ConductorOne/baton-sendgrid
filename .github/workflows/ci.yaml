@@ -119,5 +119,5 @@ jobs:
         with:
           connector: ./baton-sendgrid
           account-email: ${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}
-          account-profile: '{"email":"${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}", "scopes":["user.profile.read","user.profile.update"],"is_admin":"false"}'
+          account-profile: '{"email":"${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}", "scopes":["user.profile.read","user.profile.update"],"is_admin": false }'
           account-type: "teammate_invitation"

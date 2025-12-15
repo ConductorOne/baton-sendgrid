@@ -61,6 +61,39 @@ func (d *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 	return &v2.ConnectorMetadata{
 		DisplayName: "Sendgrid",
 		Description: "Connector syncing Sendgrid teammates to Baton.",
+		AccountCreationSchema: &v2.ConnectorAccountCreationSchema{
+			FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+				"email": {
+					DisplayName: "Email",
+					Required:    true,
+					Description: "Email address of the teammate to invite.",
+					Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+						StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+					},
+					Placeholder: "teammate@example.com",
+					Order:       1,
+				},
+				"is_admin": {
+					DisplayName: "Is Admin",
+					Required:    false,
+					Description: "Whether the teammate should have admin privileges. Admin teammates have full access to all permissions.",
+					Field: &v2.ConnectorAccountCreationSchema_Field_BoolField{
+						BoolField: &v2.ConnectorAccountCreationSchema_BoolField{},
+					},
+					Order: 2,
+				},
+				"scopes": {
+					DisplayName: "Scopes",
+					Required:    false,
+					Description: "List of scopes to assign to the teammate. Note: Cannot specify scopes when teammate is admin. If specified, they will be ignored.",
+					Field: &v2.ConnectorAccountCreationSchema_Field_StringListField{
+						StringListField: &v2.ConnectorAccountCreationSchema_StringListField{},
+					},
+					Placeholder: "mail.send",
+					Order:       3,
+				},
+			},
+		},
 	}, nil
 }
 
