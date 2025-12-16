@@ -17,6 +17,14 @@ var (
 	ErrSendgridClientNotProvided = errors.New("sendgrid client not provided")
 )
 
+// DefaultTeammateIsAdmin is the default admin status for new teammates.
+// By default, teammates are not admins and require explicit scopes.
+var DefaultTeammateIsAdmin = false
+
+// DefaultTeammateScopes is the default scope assigned to non-admin teammates when no scopes are specified.
+// user.profile.read is the most restrictive read-only scope, allowing only viewing of profile information.
+var DefaultTeammateScopes = []string{"user.profile.read"}
+
 type SendGridClient interface {
 	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) (*models.TeammateInvitation, error)
 
@@ -78,16 +86,18 @@ func (d *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 					Required:    false,
 					Description: "Whether the teammate should have admin privileges. Admin teammates have full access to all permissions.",
 					Field: &v2.ConnectorAccountCreationSchema_Field_BoolField{
-						BoolField: &v2.ConnectorAccountCreationSchema_BoolField{},
+						BoolField: &v2.ConnectorAccountCreationSchema_BoolField{DefaultValue: &DefaultTeammateIsAdmin},
 					},
 					Order: 2,
 				},
 				"scopes": {
 					DisplayName: "Scopes",
 					Required:    false,
-					Description: "List of scopes to assign to the teammate. Note: Cannot specify scopes when teammate is admin. If specified, they will be ignored.",
+					Description: "List of scopes to assign to the teammate. Required for non-admin teammates. Ignored when teammate is admin.",
 					Field: &v2.ConnectorAccountCreationSchema_Field_StringListField{
-						StringListField: &v2.ConnectorAccountCreationSchema_StringListField{},
+						StringListField: &v2.ConnectorAccountCreationSchema_StringListField{
+							DefaultValue: DefaultTeammateScopes,
+						},
 					},
 					Placeholder: "mail.send",
 					Order:       3,

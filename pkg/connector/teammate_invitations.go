@@ -104,7 +104,7 @@ func (u *teammateInvitationBuilder) CreateAccount(
 	// Note: SendGrid API does not allow specifying scopes when teammate is an admin.
 	// Admin teammates automatically have full access to all permissions.
 	var scopes []string
-	isAdmin := false
+	isAdmin := DefaultTeammateIsAdmin
 
 	if accountInfo.GetProfile() != nil {
 		profileMap := accountInfo.GetProfile().AsMap()
@@ -136,6 +136,12 @@ func (u *teammateInvitationBuilder) CreateAccount(
 				}
 			}
 		}
+	}
+
+	// Apply default scope for non-admin teammates if no scopes were provided.
+	// This matches the DefaultValue in the AccountCreationSchema.
+	if !isAdmin && len(scopes) == 0 {
+		scopes = DefaultTeammateScopes
 	}
 
 	// Invite the teammate.

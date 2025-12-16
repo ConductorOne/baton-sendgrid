@@ -61,6 +61,9 @@ baton resources
 
 ## Teammate Invitations
 - **Provision (Create)**: Invite new teammates by email with optional scopes and admin permissions
+  - `is_admin`: Whether the teammate has admin privileges (default: `false`)
+  - `scopes`: List of permission scopes for non-admin teammates (default: `["user.profile.read"]`)
+  - Note: Scopes are ignored when `is_admin` is `true` (admins have full access)
 - **Deprovision (Delete)**: Revoke pending teammate invitations
 
 ## Teammates
