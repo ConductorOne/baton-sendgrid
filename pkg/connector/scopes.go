@@ -92,7 +92,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
 	}
 
-	scopeId := entitlement.Resource.Id.Resource
+	scopeID := entitlement.Resource.Id.Resource
 	principalUsername := principal.Id.Resource
 
 	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
@@ -101,26 +101,26 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 	}
 
 	index := slices.IndexFunc(teammate.Scopes, func(c string) bool {
-		return c == scopeId
+		return c == scopeID
 	})
 	if index >= 0 {
 		l.Info(
 			"baton-sendgrid: scope already granted to teammate",
-			zap.String("scope", scopeId),
+			zap.String("scope", scopeID),
 			zap.String("teammate", principalUsername),
 		)
 
 		return []*v2.Grant{}, annotations.New(&v2.GrantAlreadyExists{}), nil
 	}
 
-	teammate.Scopes = append(teammate.Scopes, scopeId)
+	teammate.Scopes = append(teammate.Scopes, scopeID)
 
 	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	scopeRs, err := scopeResource(Scope(scopeId))
+	scopeRs, err := scopeResource(Scope(scopeID))
 	if err != nil {
 		return nil, nil, err
 	}

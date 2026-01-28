@@ -32,7 +32,7 @@ type TeammateScope struct {
 
 type PaginationData struct {
 	Limit          string `json:"limit"`
-	AfterSubuserId string `json:"after_subuser_id"`
+	AfterSubuserID string `json:"after_subuser_id"`
 	Username       string `json:"username"`
 }
 
@@ -47,7 +47,7 @@ type TeammateInvitation struct {
 type Subuser struct {
 	Disabled bool   `json:"disabled"`
 	Email    string `json:"email"`
-	Id       int    `json:"id"`
+	ID       int    `json:"id"`
 	Username string `json:"username"`
 }
 
@@ -61,7 +61,7 @@ type SubuserCreate struct {
 }
 
 type TeammateSubuser struct {
-	Id             int      `json:"id"`
+	ID             int      `json:"id"`
 	Username       string   `json:"username"`
 	Email          string   `json:"email"`
 	Disabled       bool     `json:"disabled"`
@@ -71,7 +71,7 @@ type TeammateSubuser struct {
 
 type NextParams struct {
 	Limit          int    `json:"limit"`
-	AfterSubuserId int    `json:"after_subuser_id"`
+	AfterSubuserID int    `json:"after_subuser_id"`
 	Username       string `json:"username"`
 }
 

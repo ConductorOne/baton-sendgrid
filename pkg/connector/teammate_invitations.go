@@ -163,14 +163,14 @@ func (u *teammateInvitationBuilder) CreateAccount(
 	return car, nil, nil, nil
 }
 
-func (u *teammateInvitationBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+func (u *teammateInvitationBuilder) Delete(ctx context.Context, resourceID *v2.ResourceId) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	if resourceId.ResourceType != teammateInvitationResourceType.Id {
-		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateInvitationResourceType.Id, resourceId.ResourceType)
+	if resourceID.ResourceType != teammateInvitationResourceType.Id {
+		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateInvitationResourceType.Id, resourceID.ResourceType)
 	}
 
-	token := resourceId.GetResource()
+	token := resourceID.GetResource()
 	if token == "" {
 		return nil, fmt.Errorf("missing resource ID (token)")
 	}

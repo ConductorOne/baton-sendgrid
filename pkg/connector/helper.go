@@ -75,7 +75,7 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	}
 
 	profile := map[string]interface{}{
-		"id":       subuser.Id,
+		"id":       subuser.ID,
 		"username": subuser.Username,
 		"email":    subuser.Email,
 		"disabled": subuser.Disabled,
@@ -90,7 +90,7 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	resource, err := rs.NewResource(
 		subuser.Username,
 		subuserResourceType,
-		subuser.Id,
+		subuser.ID,
 		subUserTraitOptions,
 	)
 

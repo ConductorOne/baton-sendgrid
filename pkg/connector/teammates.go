@@ -90,14 +90,14 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, pTo
 }
 
 // Delete implements the ResourceDeleter interface for teammates.
-func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+func (u *teammateBuilder) Delete(ctx context.Context, resourceID *v2.ResourceId) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	if resourceId.ResourceType != teammateResourceType.Id {
-		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateResourceType.Id, resourceId.ResourceType)
+	if resourceID.ResourceType != teammateResourceType.Id {
+		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateResourceType.Id, resourceID.ResourceType)
 	}
 
-	username := resourceId.GetResource()
+	username := resourceID.GetResource()
 	if username == "" {
 		return nil, fmt.Errorf("missing resource ID (username)")
 	}
@@ -122,13 +122,13 @@ func newTeammateBuilder(client SendGridClient) *teammateBuilder {
 }
 
 func createGrantSubuserFromTeammate(resource *v2.Resource, subAcess *models.TeammateSubuser) ([]*v2.Grant, error) {
-	userId, err := rs.NewResourceID(subuserResourceType, subAcess.Id)
+	userID, err := rs.NewResourceID(subuserResourceType, subAcess.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	rv := []*v2.Grant{
-		grant.NewGrant(resource, accessEntitlement, userId),
+		grant.NewGrant(resource, accessEntitlement, userID),
 	}
 
 	return rv, nil
