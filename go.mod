@@ -3,7 +3,7 @@ module github.com/conductorone/baton-sendgrid
 go 1.25.2
 
 require (
-	github.com/conductorone/baton-sdk v0.7.14
+	github.com/conductorone/baton-sdk v0.7.16
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.1
