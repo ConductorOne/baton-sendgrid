@@ -24,6 +24,11 @@ var (
 		field.WithDefaultValue(false),
 		field.WithDescription("Ignore subusers in the SendGrid account, subusers are an upgraded feature of sendgrid."),
 	)
+
+	BaseURLField = field.StringField(
+		"base-url",
+		field.WithDescription("Override the SendGrid API URL (for testing)"),
+	)
 )
 
 var (
@@ -34,6 +39,7 @@ var (
 		SendGridApiKeyField,
 		SendGridRegionField,
 		IgnoreSubusers,
+		BaseURLField,
 	}
 
 	// FieldRelationships defines relationships between the fields listed in
