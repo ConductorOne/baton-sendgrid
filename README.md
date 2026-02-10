@@ -2,7 +2,7 @@
 
 #
 
-`baton-sendgrid` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-sendgrid.svg)](https://pkg.go.dev/github.com/conductorone/baton-sendgrid) ![main ci](https://github.com/conductorone/baton-sendgrid/actions/workflows/main.yaml/badge.svg)
+`baton-sendgrid` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-sendgrid.svg)](https://pkg.go.dev/github.com/conductorone/baton-sendgrid) ![ci](https://github.com/conductorone/baton-sendgrid/actions/workflows/ci.yaml/badge.svg) ![verify](https://github.com/conductorone/baton-sendgrid/actions/workflows/verify.yaml/badge.svg)
 
 `baton-sendgrid` is a connector for built using the [Baton SDK](https://github.com/conductorone/baton-sdk).
 
