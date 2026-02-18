@@ -4,8 +4,7 @@ import (
 	"context"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/pagination"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 type subuserBuilder struct {
@@ -26,22 +25,22 @@ func (r *subuserBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return subuserResourceType
 }
 
-func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	var rv []*v2.Resource
 
 	if r.ignoreSubusers {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
-	subusers, pNextToken, err := r.client.GetSubusers(ctx, pToken)
+	subusers, pNextToken, err := r.client.GetSubusers(ctx, &opts.PageToken)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	for _, subuser := range subusers {
 		rb, err := subuserResource(subuser)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 
 		rv = append(rv, rb)
@@ -52,13 +51,13 @@ func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.Resource
 		nextToken = pNextToken
 	}
 
-	return rv, nextToken, nil, nil
+	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-func (r *subuserBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (r *subuserBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (r *subuserBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (r *subuserBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
+	return nil, nil, nil
 }

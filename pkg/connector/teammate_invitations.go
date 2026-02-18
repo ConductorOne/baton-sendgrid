@@ -8,7 +8,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
-	"github.com/conductorone/baton-sdk/pkg/pagination"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -21,12 +21,12 @@ func (u *teammateInvitationBuilder) ResourceType(ctx context.Context) *v2.Resour
 	return teammateInvitationResourceType
 }
 
-func (u *teammateInvitationBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (u *teammateInvitationBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	logger := ctxzap.Extract(ctx)
 
-	invitations, pNextToken, err := u.client.GetPendingTeammates(ctx, pToken)
+	invitations, pNextToken, err := u.client.GetPendingTeammates(ctx, &opts.PageToken)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	rv := make([]*v2.Resource, 0, len(invitations))
@@ -48,15 +48,15 @@ func (u *teammateInvitationBuilder) List(ctx context.Context, parentResourceID *
 		nextToken = pNextToken
 	}
 
-	return rv, nextToken, nil, nil
+	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-func (u *teammateInvitationBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (u *teammateInvitationBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (u *teammateInvitationBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (u *teammateInvitationBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
 func (u *teammateInvitationBuilder) CreateAccountCapabilityDetails(_ context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {

@@ -9,9 +9,9 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/pagination"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -30,11 +30,11 @@ func (r *scopeBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return scopeResourceType
 }
 
-func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	if pToken == nil || pToken.Token == "" {
+func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	if opts.PageToken.Token == "" {
 		err := r.scopeCache.buildCache(ctx)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -43,16 +43,16 @@ func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId
 	for i, scope := range SendGridScopes {
 		rb, err := scopeResource(scope)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 
 		rv[i] = rb
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
 	var rv []*v2.Entitlement
 	assigmentOptions := []ent.EntitlementOption{
 		ent.WithGrantableTo(teammateResourceType),
@@ -61,10 +61,10 @@ func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ 
 	}
 	rv = append(rv, ent.NewAssignmentEntitlement(resource, assignedEntitlement, assigmentOptions...))
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
 	scope := resource.Id.Resource
 
 	users := r.scopeCache.GetUsersForScope(scope)
@@ -74,13 +74,13 @@ func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken
 	for _, user := range users {
 		userGrants, err := createGrantToScopeFromTeammateScope(ctx, resource, user)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 
 		rv = append(rv, userGrants...)
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
 // ResourceProvisioner

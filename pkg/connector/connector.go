@@ -5,12 +5,17 @@ import (
 	"errors"
 	"io"
 
-	"github.com/conductorone/baton-sdk/pkg/pagination"
+	cfg "github.com/conductorone/baton-sendgrid/pkg/config"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 var (
@@ -49,8 +54,8 @@ type Connector struct {
 }
 
 // ResourceSyncers returns a ResourceSyncer for each resource type that should be synced from the upstream service.
-func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
-	return []connectorbuilder.ResourceSyncer{
+func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
+	return []connectorbuilder.ResourceSyncerV2{
 		newTeammateBuilder(d.client),
 		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client, d.scopeCache),
@@ -114,14 +119,34 @@ func (d *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 }
 
 // New returns a new instance of the connector.
-func New(ctx context.Context, client SendGridClient, ignoreSubusers bool) (*Connector, error) {
-	if client == nil {
-		return nil, ErrSendgridClientNotProvided
+func New(ctx context.Context, cc *cfg.Sendgrid, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+	l := ctxzap.Extract(ctx)
+
+	sendGridApiKey := cc.SendgridApiKey
+	sendgridRegion := cc.SendgridRegion
+	sendgridIgnoreSubusers := cc.IgnoreSubusers
+
+	var baseUrl string
+
+	switch sendgridRegion {
+	case "eu":
+		baseUrl = client.SendGridEUBaseUrl
+	case "global":
+		baseUrl = client.SendGridBaseUrl
+	default:
+		baseUrl = client.SendGridBaseUrl
+		l.Warn("invalid sendgrid region, using the default global URL", zap.String("region", sendgridRegion))
+	}
+
+	sendGridClient, err := client.NewClient(ctx, baseUrl, sendGridApiKey)
+	if err != nil {
+		l.Error("error creating sendgrid client", zap.Error(err))
+		return nil, nil, err
 	}
 
 	return &Connector{
-		client:         client,
-		scopeCache:     newScopeCache(client),
-		ignoreSubusers: ignoreSubusers,
-	}, nil
+		client:         sendGridClient,
+		scopeCache:     newScopeCache(sendGridClient),
+		ignoreSubusers: sendgridIgnoreSubusers,
+	}, nil, nil
 }
