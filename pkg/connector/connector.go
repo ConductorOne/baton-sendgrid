@@ -71,7 +71,7 @@ func (d *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 		Description: "Connector syncing Sendgrid teammates to Baton.",
 		AccountCreationSchema: &v2.ConnectorAccountCreationSchema{
 			FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
-				"email": {
+				emailKey: {
 					DisplayName: "Email",
 					Required:    true,
 					Description: "Email address of the teammate to invite.",
@@ -81,7 +81,7 @@ func (d *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 					Placeholder: "teammate@example.com",
 					Order:       1,
 				},
-				"is_admin": {
+				isAdminKey: {
 					DisplayName: "Is Admin",
 					Required:    false,
 					Description: "Whether the teammate should have admin privileges. Admin teammates have full access to all permissions.",

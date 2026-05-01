@@ -10,15 +10,20 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
+const (
+	emailKey   = "email"
+	isAdminKey = "is_admin"
+)
+
 func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
 
 	profile := map[string]interface{}{
 		"username":       user.Username,
 		"user_type":      user.UserType,
-		"email":          user.Email,
+		emailKey:         user.Email,
 		"is_sso":         user.IsSso,
-		"is_admin":       user.IsAdmin,
+		isAdminKey:       user.IsAdmin,
 		"is_unified":     user.IsUnified,
 		"is_partner_sso": user.IsPartnerSso,
 	}
@@ -77,7 +82,7 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	profile := map[string]interface{}{
 		"id":       subuser.Id,
 		"username": subuser.Username,
-		"email":    subuser.Email,
+		emailKey:   subuser.Email,
 		"disabled": subuser.Disabled,
 	}
 
@@ -118,7 +123,7 @@ func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Reso
 	profile := map[string]interface{}{
 		"token":           invitation.Token,
 		"scopes":          scopes,
-		"is_admin":        invitation.IsAdmin,
+		isAdminKey:        invitation.IsAdmin,
 		"expiration_date": invitation.ExpirationDate,
 	}
 
