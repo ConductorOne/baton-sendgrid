@@ -52,17 +52,22 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 	sendGridApyKey := v.GetString(SendGridApiKeyField.GetName())
 	sendgridRegion := v.GetString(SendGridRegionField.GetName())
 	sendgridIgnoreSubusers := v.GetBool(IgnoreSubusers.GetName())
+	baseUrlOverride := v.GetString(BaseURLField.GetName())
 
 	var baseUrl string
 
-	switch sendgridRegion {
-	case "eu":
-		baseUrl = client.SendGridEUBaseUrl
-	case "global":
-		baseUrl = client.SendGridBaseUrl
-	default:
-		baseUrl = client.SendGridBaseUrl
-		l.Warn("invalid sendgrid region, using the default global URL", zap.String("region", sendgridRegion))
+	if baseUrlOverride != "" {
+		baseUrl = baseUrlOverride
+	} else {
+		switch sendgridRegion {
+		case "eu":
+			baseUrl = client.SendGridEUBaseUrl
+		case "global":
+			baseUrl = client.SendGridBaseUrl
+		default:
+			baseUrl = client.SendGridBaseUrl
+			l.Warn("invalid sendgrid region, using the default global URL", zap.String("region", sendgridRegion))
+		}
 	}
 
 	sendGridCliet, err := client.NewClient(ctx, baseUrl, sendGridApyKey)
