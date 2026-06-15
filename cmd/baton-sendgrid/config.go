@@ -10,6 +10,7 @@ var (
 		"sendgrid-api-key",
 		field.WithRequired(true),
 		field.WithDescription("API key for SendGrid service."),
+		field.WithIsSecret(true),
 	)
 
 	SendGridRegionField = field.StringField(
