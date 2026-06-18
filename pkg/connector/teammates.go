@@ -9,11 +9,9 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/session"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -43,16 +41,6 @@ func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 			return nil, nil, err
 		}
 		rv[i] = us
-
-		if opts.Session != nil {
-			specificTeammate, err := u.client.GetSpecificTeammate(ctx, teammate.Username)
-			if err != nil {
-				return nil, nil, err
-			}
-			if err := session.SetJSON(ctx, opts.Session, teammate.Username, specificTeammate, sessions.WithPrefix(teammateScopePrefix)); err != nil {
-				return nil, nil, err
-			}
-		}
 	}
 
 	nextToken := ""
@@ -80,6 +68,7 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 
 	username := resource.Id.Resource
 
+	// Subuser access grants.
 	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken)
 	if err != nil {
 		return nil, nil, err
@@ -88,19 +77,33 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 	logger := ctxzap.Extract(ctx)
 	logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
 
-	for _, subAcess := range access {
-		grants, err := createGrantSubuserFromTeammate(resource, &subAcess)
+	for _, subAccess := range access {
+		grants, err := createGrantSubuserFromTeammate(resource, &subAccess)
+		if err != nil {
+			return nil, nil, err
+		}
+		rv = append(rv, grants...)
+	}
+
+	// Scope grants — only on the first (and only) page to avoid duplicate API calls.
+	if opts.PageToken.Token == "" {
+		specificTeammate, err := u.client.GetSpecificTeammate(ctx, username)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		rv = append(rv, grants...)
+		for _, scope := range specificTeammate.Scopes {
+			scopeRs, err := scopeResource(Scope(scope))
+			if err != nil {
+				return nil, nil, err
+			}
+			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
+		}
 	}
 
 	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-// Delete implements the ResourceDeleter interface for teammates.
 func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
@@ -114,7 +117,6 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId)
 	}
 
 	if err := u.client.DeleteTeammate(ctx, username); err != nil {
-		// Check if it's a "not found" error from SendGrid
 		if strings.Contains(err.Error(), "teammate does not exist") {
 			l.Warn("Teammate not found, may have been already deleted")
 			return nil, nil

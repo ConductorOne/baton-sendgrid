@@ -50,7 +50,6 @@ type SendGridClient interface {
 
 type Connector struct {
 	client         SendGridClient
-	scopeCache     *scopeCache
 	ignoreSubusers bool
 }
 
@@ -59,7 +58,7 @@ func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.Reso
 	return []connectorbuilder.ResourceSyncerV2{
 		newTeammateBuilder(d.client),
 		newTeammateInvitationBuilder(d.client),
-		newScopeBuilder(d.client, d.scopeCache),
+		newScopeBuilder(d.client),
 		newSubuserBuilder(d.client, d.ignoreSubusers),
 	}
 }
@@ -127,7 +126,6 @@ func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Co
 
 	return &Connector{
 		client:         sgClient,
-		scopeCache:     newScopeCache(),
 		ignoreSubusers: ignoreSubusers,
 	}, nil
 }

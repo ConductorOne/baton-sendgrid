@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
-
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
@@ -19,7 +17,6 @@ import (
 type scopeBuilder struct {
 	resourceType *v2.ResourceType
 	client       SendGridClient
-	scopeCache   *scopeCache
 }
 
 const (
@@ -57,26 +54,9 @@ func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ 
 	return rv, &rs.SyncOpResults{}, nil
 }
 
-func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
-	scope := resource.Id.Resource
-
-	users, err := r.scopeCache.GetUsersForScope(ctx, opts.Session, scope)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var rv []*v2.Grant
-
-	for _, user := range users {
-		userGrants, err := createGrantToScopeFromTeammateScope(ctx, resource, user)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		rv = append(rv, userGrants...)
-	}
-
-	return rv, &rs.SyncOpResults{}, nil
+// Grants returns empty — scope grants are emitted by teammateBuilder.Grants.
+func (r *scopeBuilder) Grants(_ context.Context, _ *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
+	return nil, &rs.SyncOpResults{}, nil
 }
 
 // ResourceProvisioner
@@ -121,20 +101,14 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, nil, err
 	}
 
-	grants, err := createGrantToScopeFromTeammateScope(ctx, scopeRs, teammate)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return grants, nil, nil
+	return []*v2.Grant{grant.NewGrant(scopeRs, assignedEntitlement, principal.Id)}, nil, nil
 }
 
-func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	principal := grant.Principal
-	scopeToRemove := grant.Entitlement.Resource.Id.Resource
-
+	principal := g.Principal
+	scopeToRemove := g.Entitlement.Resource.Id.Resource
 	principalUsername := principal.Id.Resource
 
 	if principal.Id.ResourceType != teammateResourceType.Id {
@@ -159,11 +133,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
 	}
 
-	if index == 0 {
-		teammate.Scopes = teammate.Scopes[1:]
-	} else {
-		teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
-	}
+	teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 
 	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
 	if err != nil {
@@ -173,32 +143,9 @@ func (r *scopeBuilder) Revoke(ctx context.Context, grant *v2.Grant) (annotations
 	return nil, nil
 }
 
-func newScopeBuilder(c SendGridClient, cache *scopeCache) *scopeBuilder {
+func newScopeBuilder(c SendGridClient) *scopeBuilder {
 	return &scopeBuilder{
 		resourceType: scopeResourceType,
 		client:       c,
-		scopeCache:   cache,
 	}
-}
-
-func createGrantToScopeFromTeammateScope(ctx context.Context, resource *v2.Resource, teammate *models.TeammateScope) ([]*v2.Grant, error) {
-	var rv []*v2.Grant
-	l := ctxzap.Extract(ctx)
-
-	for _, scope := range teammate.Scopes {
-		if scope == "" {
-			l.Warn("empty scope", zap.String("scope", scope))
-			continue
-		}
-
-		userR, err := teammateResource(&teammate.Teammate)
-		if err != nil {
-			return nil, err
-		}
-
-		grantToUser := grant.NewGrant(resource, assignedEntitlement, userR.Id)
-		rv = append(rv, grantToUser)
-	}
-
-	return rv, nil
 }
