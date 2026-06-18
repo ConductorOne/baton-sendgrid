@@ -108,11 +108,16 @@
     {
       "name": "sendgrid-region",
       "displayName": "Region",
-      "description": "Region for SendGrid service ex: global or eu.",
+      "description": "Region for SendGrid service: global or eu.",
       "placeholder": "global",
       "stringField": {
         "defaultValue": "global",
-        "rules": {}
+        "rules": {
+          "in": [
+            "global",
+            "eu"
+          ]
+        }
       }
     },
     {

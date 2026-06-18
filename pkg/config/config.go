@@ -12,11 +12,11 @@ var (
 		field.WithPlaceholder("SG.xxxxxxxxxxxxxxxxxxxx"),
 	)
 
-	SendGridRegionField = field.StringField(
+	SendGridRegionField = field.SelectField(
 		"sendgrid-region",
-		field.WithRequired(false),
+		[]string{"global", "eu"},
 		field.WithDefaultValue("global"),
-		field.WithDescription("Region for SendGrid service ex: global or eu."),
+		field.WithDescription("Region for SendGrid service: global or eu."),
 		field.WithDisplayName("Region"),
 		field.WithPlaceholder("global"),
 	)
