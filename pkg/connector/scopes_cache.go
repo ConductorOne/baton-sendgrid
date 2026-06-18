@@ -6,12 +6,17 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/conductorone/baton-sdk/pkg/session"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
+
+const scopeCachePrefix = "scope-cache/"
 
 type scopeCache struct {
 	client      SendGridClient
 	scopeToUser map[string][]*models.TeammateScope
+	loaded      bool
 }
 
 func newScopeCache(gridClient SendGridClient) *scopeCache {
@@ -21,7 +26,7 @@ func newScopeCache(gridClient SendGridClient) *scopeCache {
 	}
 }
 
-func (s *scopeCache) buildCache(ctx context.Context) error {
+func (s *scopeCache) buildCache(ctx context.Context, ss sessions.SessionStore) error {
 	l := ctxzap.Extract(ctx)
 
 	l.Info("Building cache for scopes")
@@ -59,15 +64,31 @@ func (s *scopeCache) buildCache(ctx context.Context) error {
 
 	l.Info("Cache built for scopes")
 
+	s.loaded = true
+
+	if ss != nil {
+		if err := session.SetManyJSON(ctx, ss, s.scopeToUser, sessions.WithPrefix(scopeCachePrefix)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func (s *scopeCache) GetUsersForScope(scope string) []*models.TeammateScope {
-	users, ok := s.scopeToUser[scope]
-
-	if ok {
-		return users
+func (s *scopeCache) GetUsersForScope(ctx context.Context, ss sessions.SessionStore, scope string) ([]*models.TeammateScope, error) {
+	if !s.loaded && ss != nil {
+		cached, err := session.GetAllJSON[[]*models.TeammateScope](ctx, ss, sessions.WithPrefix(scopeCachePrefix))
+		if err != nil {
+			return nil, err
+		}
+		s.scopeToUser = cached
+		s.loaded = true
 	}
 
-	return []*models.TeammateScope{}
+	users, ok := s.scopeToUser[scope]
+	if ok {
+		return users, nil
+	}
+
+	return []*models.TeammateScope{}, nil
 }

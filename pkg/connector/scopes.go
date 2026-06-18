@@ -32,7 +32,7 @@ func (r *scopeBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 
 func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	if opts.PageToken.Token == "" {
-		err := r.scopeCache.buildCache(ctx)
+		err := r.scopeCache.buildCache(ctx, opts.Session)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -67,7 +67,10 @@ func (r *scopeBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ 
 func (r *scopeBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
 	scope := resource.Id.Resource
 
-	users := r.scopeCache.GetUsersForScope(scope)
+	users, err := r.scopeCache.GetUsersForScope(ctx, opts.Session, scope)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var rv []*v2.Grant
 
