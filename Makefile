@@ -24,6 +24,7 @@ $(GENERATED_CONF): pkg/config/config.go go.mod
 	@echo "Generating $(GENERATED_CONF)..."
 	go generate ./pkg/config
 
+.PHONY: generate
 generate: $(GENERATED_CONF)
 
 .PHONY: update-deps
