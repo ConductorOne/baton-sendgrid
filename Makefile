@@ -9,7 +9,7 @@ else
 OUTPUT_PATH = ${BUILD_DIR}/baton-sendgrid
 endif
 
-# Set the build tag conditionally based on ENABLE_LAMBDA
+# Set the build tag conditionally based on BATON_LAMBDA_SUPPORT
 ifdef BATON_LAMBDA_SUPPORT
 	BUILD_TAGS=-tags baton_lambda_support
 else
