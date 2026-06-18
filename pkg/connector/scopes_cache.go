@@ -14,15 +14,12 @@ import (
 const scopeCachePrefix = "scope-cache/"
 
 type scopeCache struct {
-	client      SendGridClient
-	scopeToUser map[string][]*models.TeammateScope
-	loaded      bool
+	client SendGridClient
 }
 
 func newScopeCache(gridClient SendGridClient) *scopeCache {
 	return &scopeCache{
-		client:      gridClient,
-		scopeToUser: make(map[string][]*models.TeammateScope),
+		client: gridClient,
 	}
 }
 
@@ -31,7 +28,7 @@ func (s *scopeCache) buildCache(ctx context.Context, ss sessions.SessionStore) e
 
 	l.Info("Building cache for scopes")
 
-	s.scopeToUser = make(map[string][]*models.TeammateScope)
+	scopeToUser := make(map[string][]*models.TeammateScope)
 
 	pToken := "0"
 
@@ -57,38 +54,23 @@ func (s *scopeCache) buildCache(ctx context.Context, ss sessions.SessionStore) e
 			}
 
 			for _, scope := range specificTeammate.Scopes {
-				s.scopeToUser[scope] = append(s.scopeToUser[scope], specificTeammate)
+				scopeToUser[scope] = append(scopeToUser[scope], specificTeammate)
 			}
 		}
 	}
 
 	l.Info("Cache built for scopes")
 
-	s.loaded = true
-
-	if ss != nil {
-		if err := session.SetManyJSON(ctx, ss, s.scopeToUser, sessions.WithPrefix(scopeCachePrefix)); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return session.SetManyJSON(ctx, ss, scopeToUser, sessions.WithPrefix(scopeCachePrefix))
 }
 
 func (s *scopeCache) GetUsersForScope(ctx context.Context, ss sessions.SessionStore, scope string) ([]*models.TeammateScope, error) {
-	if !s.loaded && ss != nil {
-		cached, err := session.GetAllJSON[[]*models.TeammateScope](ctx, ss, sessions.WithPrefix(scopeCachePrefix))
-		if err != nil {
-			return nil, err
-		}
-		s.scopeToUser = cached
-		s.loaded = true
+	users, found, err := session.GetJSON[[]*models.TeammateScope](ctx, ss, scope, sessions.WithPrefix(scopeCachePrefix))
+	if err != nil {
+		return nil, err
 	}
-
-	users, ok := s.scopeToUser[scope]
-	if ok {
-		return users, nil
+	if !found {
+		return []*models.TeammateScope{}, nil
 	}
-
-	return []*models.TeammateScope{}, nil
+	return users, nil
 }
