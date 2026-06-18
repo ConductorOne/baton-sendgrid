@@ -9,9 +9,11 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/session"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -41,6 +43,16 @@ func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 			return nil, nil, err
 		}
 		rv[i] = us
+
+		if opts.Session != nil {
+			specificTeammate, err := u.client.GetSpecificTeammate(ctx, teammate.Username)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := session.SetJSON(ctx, opts.Session, teammate.Username, specificTeammate, sessions.WithPrefix(teammateScopePrefix)); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 
 	nextToken := ""

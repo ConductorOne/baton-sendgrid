@@ -30,14 +30,7 @@ func (r *scopeBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return scopeResourceType
 }
 
-func (r *scopeBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	if opts.PageToken.Token == "" {
-		err := r.scopeCache.buildCache(ctx, opts.Session)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
+func (r *scopeBuilder) List(_ context.Context, _ *v2.ResourceId, _ rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	rv := make([]*v2.Resource, len(SendGridScopes))
 
 	for i, scope := range SendGridScopes {

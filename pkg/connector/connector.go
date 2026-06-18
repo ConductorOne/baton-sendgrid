@@ -127,7 +127,7 @@ func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Co
 
 	return &Connector{
 		client:         sgClient,
-		scopeCache:     newScopeCache(sgClient),
+		scopeCache:     newScopeCache(),
 		ignoreSubusers: ignoreSubusers,
 	}, nil
 }
