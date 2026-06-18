@@ -3,14 +3,20 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
-	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/conductorone/baton-sendgrid/pkg/config"
+	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 var (
@@ -48,9 +54,9 @@ type Connector struct {
 	ignoreSubusers bool
 }
 
-// ResourceSyncers returns a ResourceSyncer for each resource type that should be synced from the upstream service.
-func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
-	return []connectorbuilder.ResourceSyncer{
+// ResourceSyncers returns a ResourceSyncerV2 for each resource type that should be synced from the upstream service.
+func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
+	return []connectorbuilder.ResourceSyncerV2{
 		newTeammateBuilder(d.client),
 		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client, d.scopeCache),
@@ -114,14 +120,52 @@ func (d *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 }
 
 // New returns a new instance of the connector.
-func New(ctx context.Context, client SendGridClient, ignoreSubusers bool) (*Connector, error) {
-	if client == nil {
+func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Connector, error) {
+	if sgClient == nil {
 		return nil, ErrSendgridClientNotProvided
 	}
 
 	return &Connector{
-		client:         client,
-		scopeCache:     newScopeCache(client),
+		client:         sgClient,
+		scopeCache:     newScopeCache(sgClient),
 		ignoreSubusers: ignoreSubusers,
 	}, nil
+}
+
+// NewLambdaConnector creates a new connector from config for lambda/containerized deployment.
+func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+	l := ctxzap.Extract(ctx)
+
+	sendGridApiKey := cfg.SendgridApiKey
+	sendgridRegion := cfg.SendgridRegion
+	sendgridIgnoreSubusers := cfg.IgnoreSubusers
+	baseUrlOverride := cfg.BaseUrl
+
+	var baseUrl string
+
+	if baseUrlOverride != "" {
+		baseUrl = baseUrlOverride
+	} else {
+		switch sendgridRegion {
+		case "eu":
+			baseUrl = client.SendGridEUBaseUrl
+		case "global":
+			baseUrl = client.SendGridBaseUrl
+		default:
+			baseUrl = client.SendGridBaseUrl
+			l.Warn("invalid sendgrid region, using the default global URL", zap.String("region", sendgridRegion))
+		}
+	}
+
+	sendGridClient, err := client.NewClient(ctx, baseUrl, sendGridApiKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: error creating client: %w", err)
+	}
+
+	cb, err := New(ctx, sendGridClient, sendgridIgnoreSubusers)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: error creating connector: %w", err)
+	}
+
+	return cb, nil, nil
 }
