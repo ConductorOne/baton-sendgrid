@@ -6,7 +6,7 @@ type Scope string
 // Sendgrid does not provide an api to list scopes, so this list is manually
 // maintained from https://www.twilio.com/docs/sendgrid/api-reference/api-key-permissions
 var SendGridScopes = map[Scope]struct{}{
-	"access_settings.activity.read":            {},
+	"access_settings.activity.read":             {},
 	"access_settings.whitelist.create":          {},
 	"access_settings.whitelist.delete":          {},
 	"access_settings.whitelist.read":            {},
