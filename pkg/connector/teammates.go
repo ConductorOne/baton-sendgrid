@@ -93,6 +93,10 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 		}
 
 		for _, scope := range specificTeammate.Scopes {
+			if _, ok := SendGridScopes[Scope(scope)]; !ok {
+				logger.Debug("baton-sendgrid: skipping unknown scope", zap.String("scope", scope))
+				continue
+			}
 			scopeRs, err := scopeResource(Scope(scope))
 			if err != nil {
 				return nil, nil, err

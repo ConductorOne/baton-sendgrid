@@ -9,10 +9,9 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector"
 )
 
-const (
-	version       = "dev"
-	connectorName = "baton-sendgrid"
-)
+var version = "dev"
+
+const connectorName = "baton-sendgrid"
 
 func main() {
 	ctx := context.Background()

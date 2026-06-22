@@ -28,15 +28,15 @@ func (r *scopeBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 }
 
 func (r *scopeBuilder) List(_ context.Context, _ *v2.ResourceId, _ rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	rv := make([]*v2.Resource, len(SendGridScopes))
+	rv := make([]*v2.Resource, 0, len(SendGridScopes))
 
-	for i, scope := range SendGridScopes {
+	for scope := range SendGridScopes {
 		rb, err := scopeResource(scope)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		rv[i] = rb
+		rv = append(rv, rb)
 	}
 
 	return rv, &rs.SyncOpResults{}, nil
