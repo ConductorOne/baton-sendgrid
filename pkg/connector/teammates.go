@@ -9,7 +9,6 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/pagination"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
@@ -29,17 +28,17 @@ func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return teammateResourceType
 }
 
-func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	teammates, pNextToken, err := u.client.GetTeammates(ctx, pToken)
+func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	rv := make([]*v2.Resource, len(teammates))
 	for i, teammate := range teammates {
 		us, err := teammateResource(&teammate)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv[i] = us
 	}
@@ -49,10 +48,10 @@ func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.Resourc
 		nextToken = pNextToken
 	}
 
-	return rv, nextToken, nil, nil
+	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-func (u *teammateBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (u *teammateBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
 	var rv []*v2.Entitlement
 	assigmentOptions := []ent.EntitlementOption{
 		ent.WithGrantableTo(subuserResourceType),
@@ -61,35 +60,54 @@ func (u *teammateBuilder) Entitlements(_ context.Context, resource *v2.Resource,
 	}
 	rv = append(rv, ent.NewAssignmentEntitlement(resource, accessEntitlement, assigmentOptions...))
 
-	return rv, "", nil, nil
+	return rv, &rs.SyncOpResults{}, nil
 }
 
-func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opts rs.SyncOpAttrs) ([]*v2.Grant, *rs.SyncOpResults, error) {
 	var rv []*v2.Grant
 
 	username := resource.Id.Resource
 
-	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, pToken)
+	// Subuser access grants.
+	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	logger := ctxzap.Extract(ctx)
 	logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
 
-	for _, subAcess := range access {
-		grants, err := createGrantSubuserFromTeammate(resource, &subAcess)
+	for _, subAccess := range access {
+		grants, err := createGrantSubuserFromTeammate(resource, &subAccess)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
-
 		rv = append(rv, grants...)
 	}
 
-	return rv, nextToken, nil, nil
+	// Scope grants — only on the first (and only) page to avoid duplicate API calls.
+	if opts.PageToken.Token == "" {
+		specificTeammate, err := u.client.GetSpecificTeammate(ctx, username)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for _, scope := range specificTeammate.Scopes {
+			if _, ok := SendGridScopes[Scope(scope)]; !ok {
+				logger.Debug("baton-sendgrid: skipping unknown scope", zap.String("scope", scope))
+				continue
+			}
+			scopeRs, err := scopeResource(Scope(scope))
+			if err != nil {
+				return nil, nil, err
+			}
+			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
+		}
+	}
+
+	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-// Delete implements the ResourceDeleter interface for teammates.
 func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
@@ -103,7 +121,6 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId)
 	}
 
 	if err := u.client.DeleteTeammate(ctx, username); err != nil {
-		// Check if it's a "not found" error from SendGrid
 		if strings.Contains(err.Error(), "teammate does not exist") {
 			l.Warn("Teammate not found, may have been already deleted")
 			return nil, nil
