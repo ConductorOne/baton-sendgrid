@@ -17,7 +17,10 @@ var (
 		Id:          "teammate_invitation",
 		DisplayName: "Teammate Invitation",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
-		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}),
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			&v2.SkipSyncAnomalyDetection{},
+		),
 	}
 
 	scopeResourceType = &v2.ResourceType{

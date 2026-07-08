@@ -48,7 +48,7 @@ jobs:
       - name: Run baton-sendgrid
         run: ./baton-sendgrid
       - name: Install baton
-        run: ./scripts/get-baton.sh && mv baton /usr/local/bin
+        uses: ConductorOne/github-workflows/actions/get-baton@v4
       - name: Grant entitlement
         run: ./baton-sendgrid --grant-entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --grant-principal="${{env.CONNECTOR_PRINCIPAL}}" --grant-principal-type="${{env.CONNECTOR_PRINCIPAL_TYPE}}"
       - name: Check for grant before revoking
@@ -64,7 +64,7 @@ jobs:
       - name: Check grant was re-granted
         run: ./baton-sendgrid && baton grants --entitlement="${{env.CONNECTOR_ENTITLEMENT}}" --output-format=json | jq --exit-status ".grants[] | select( .principal.id.resource == \"${{env.CONNECTOR_PRINCIPAL}}\" )"
       - name: Test Teammate Invitation - Account Provisioning
-        uses: ConductorOne/github-workflows/actions/account-provisioning@v3
+        uses: ConductorOne/github-workflows/actions/account-provisioning@v4
         with:
           connector: ./baton-sendgrid
           account-email: ${{ vars.CI_TEAMMATE_INVITATION_PROVISIONING_EMAIL }}
