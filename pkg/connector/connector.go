@@ -43,6 +43,7 @@ type SendGridClient interface {
 	SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error
 
 	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]models.Subuser, string, error)
+	GetSubuserTeammates(ctx context.Context, subuserUsername string, pToken *pagination.Token) ([]models.Teammate, string, error)
 	CreateSubuser(ctx context.Context, subuser models.SubuserCreate) error
 	DeleteSubuser(ctx context.Context, username string) error
 	SetSubuserDisabled(ctx context.Context, username string, disabled bool) error
@@ -55,12 +56,16 @@ type Connector struct {
 
 // ResourceSyncers returns a ResourceSyncerV2 for each resource type that should be synced from the upstream service.
 func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
-	return []connectorbuilder.ResourceSyncerV2{
+	syncers := []connectorbuilder.ResourceSyncerV2{
 		newTeammateBuilder(d.client),
 		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client),
 		newSubuserBuilder(d.client, d.ignoreSubusers),
 	}
+	if !d.ignoreSubusers {
+		syncers = append(syncers, newSubuserTeammateBuilder(d.client))
+	}
+	return syncers
 }
 
 // Asset takes an input AssetRef and attempts to fetch it using the connector's.json authenticated http client

@@ -106,6 +106,41 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	return resource, nil
 }
 
+func subuserTeammateResource(user *models.Teammate, subuserUsername string, parentResourceID *v2.ResourceId) (*v2.Resource, error) {
+	profile := map[string]interface{}{
+		"username":       user.Username,
+		"user_type":      user.UserType,
+		emailKey:         user.Email,
+		"is_sso":         user.IsSso,
+		isAdminKey:       user.IsAdmin,
+		"is_unified":     user.IsUnified,
+		"is_partner_sso": user.IsPartnerSso,
+		"subuser":        subuserUsername,
+	}
+
+	userTraits := []rs.UserTraitOption{
+		rs.WithUserProfile(profile),
+		rs.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		rs.WithEmail(user.Email, true),
+		rs.WithUserLogin(user.Email),
+	}
+
+	resourceID := fmt.Sprintf("%s/%s", subuserUsername, user.Username)
+
+	ret, err := rs.NewUserResource(
+		user.Username,
+		subuserTeammateResourceType,
+		resourceID,
+		userTraits,
+		rs.WithParentResourceID(parentResourceID),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
 func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Resource, error) {
 	resourceID := strings.TrimSpace(invitation.Token)
 

@@ -33,4 +33,10 @@ var (
 		DisplayName: "Subuser",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
+
+	subuserTeammateResourceType = &v2.ResourceType{
+		Id:          "subuser_teammate",
+		DisplayName: "Subuser Teammate",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
+	}
 )

@@ -25,6 +25,7 @@ var (
 	SendGridBaseUrl   = "https://api.sendgrid.com/"
 	SendGridEUBaseUrl = "https://api.eu.sendgrid.com/"
 	AuthHeaderName    = "Authorization"
+	OnBehalfOfHeader  = "on-behalf-of"
 
 	RetrieveAllTeammatesEndpoint     = "v3/teammates"
 	InviteTeammateEndpoint           = "v3/teammates"
@@ -302,6 +303,36 @@ func (h *SendGridClient) SetSubuserDisabled(ctx context.Context, username string
 	return h.doRequest(ctx, http.MethodPatch, uri, nil, body)
 }
 
+// GetSubuserTeammates lists teammates within a sub-account using the on-behalf-of header.
+func (h *SendGridClient) GetSubuserTeammates(ctx context.Context, subuserUsername string, pToken *pagination.Token) ([]models.Teammate, string, error) {
+	var response models.CommonResponse[[]models.Teammate]
+
+	offset, err := getTokenValue(pToken)
+	if err != nil {
+		return nil, "", err
+	}
+
+	uri := h.getUrl(RetrieveAllTeammatesEndpoint)
+	query := uri.Query()
+	query.Add("limit", fmt.Sprintf("%d", h.pageLimit))
+	query.Add("offset", fmt.Sprintf("%d", offset))
+	uri.RawQuery = query.Encode()
+
+	err = h.doRequest(
+		ctx,
+		http.MethodGet,
+		uri,
+		&response,
+		nil,
+		uhttp.WithHeader(OnBehalfOfHeader, subuserUsername),
+	)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return response.Result, nextTokenPage(offset), nil
+}
+
 // SetTeammateScopes
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/update-teammates-permissions
 func (h *SendGridClient) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error {
@@ -363,18 +394,24 @@ func (h *SendGridClient) doRequest(
 	urlAddress *url.URL,
 	res interface{},
 	body interface{},
+	extraOpts ...uhttp.RequestOption,
 ) error {
 	var (
 		resp *http.Response
 		err  error
 	)
 
+	reqOpts := []uhttp.RequestOption{
+		uhttp.WithHeader(AuthHeaderName, fmt.Sprintf("Bearer %s", h.apiKey)),
+		uhttp.WithJSONBody(body),
+	}
+	reqOpts = append(reqOpts, extraOpts...)
+
 	req, err := h.httpClient.NewRequest(
 		ctx,
 		method,
 		urlAddress,
-		uhttp.WithHeader(AuthHeaderName, fmt.Sprintf("Bearer %s", h.apiKey)),
-		uhttp.WithJSONBody(body),
+		reqOpts...,
 	)
 	if err != nil {
 		return err
