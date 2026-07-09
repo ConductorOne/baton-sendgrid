@@ -27,6 +27,19 @@
     },
     {
       "resourceType": {
+        "id": "subuser_teammate",
+        "displayName": "Subuser Teammate",
+        "traits": [
+          "TRAIT_USER"
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions": {}
+    },
+    {
+      "resourceType": {
         "id": "teammate",
         "displayName": "teammate",
         "traits": [
