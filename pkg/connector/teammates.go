@@ -21,7 +21,9 @@ const (
 )
 
 type teammateBuilder struct {
-	client SendGridClient
+	client       SendGridClient
+	syncScopes   bool
+	syncSubusers bool
 }
 
 func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -68,25 +70,34 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 
 	username := resource.Id.Resource
 
-	// Subuser access grants.
-	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	logger := ctxzap.Extract(ctx)
-	logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
 
-	for _, subAccess := range access {
-		grants, err := createGrantSubuserFromTeammate(resource, &subAccess)
+	// Subuser access grants — skipped entirely if the sync filter excludes
+	// the subuser resource type, to avoid emitting dangling grants that
+	// reference a resource type that isn't being synced.
+	nextToken := ""
+	if u.syncSubusers {
+		access, subNextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken)
 		if err != nil {
 			return nil, nil, err
 		}
-		rv = append(rv, grants...)
+
+		logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
+
+		for _, subAccess := range access {
+			grants, err := createGrantSubuserFromTeammate(resource, &subAccess)
+			if err != nil {
+				return nil, nil, err
+			}
+			rv = append(rv, grants...)
+		}
+
+		nextToken = subNextToken
 	}
 
-	// Scope grants — only on the first (and only) page to avoid duplicate API calls.
-	if opts.PageToken.Token == "" {
+	// Scope grants — only on the first (and only) page to avoid duplicate API
+	// calls, and only if the sync filter includes the scope resource type.
+	if opts.PageToken.Token == "" && u.syncScopes {
 		specificTeammate, err := u.client.GetSpecificTeammate(ctx, username)
 		if err != nil {
 			return nil, nil, err
@@ -132,9 +143,11 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId)
 	return nil, nil
 }
 
-func newTeammateBuilder(client SendGridClient) *teammateBuilder {
+func newTeammateBuilder(client SendGridClient, syncScopes bool, syncSubusers bool) *teammateBuilder {
 	return &teammateBuilder{
-		client: client,
+		client:       client,
+		syncScopes:   syncScopes,
+		syncSubusers: syncSubusers,
 	}
 }
 

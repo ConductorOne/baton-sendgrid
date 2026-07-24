@@ -51,12 +51,14 @@ type SendGridClient interface {
 type Connector struct {
 	client         SendGridClient
 	ignoreSubusers bool
+	syncScopes     bool
+	syncSubusers   bool
 }
 
 // ResourceSyncers returns a ResourceSyncerV2 for each resource type that should be synced from the upstream service.
 func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		newTeammateBuilder(d.client),
+		newTeammateBuilder(d.client, d.syncScopes, d.syncSubusers),
 		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client),
 		newSubuserBuilder(d.client, d.ignoreSubusers),
@@ -119,7 +121,7 @@ func (d *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 }
 
 // New returns a new instance of the connector.
-func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Connector, error) {
+func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool, syncScopes bool, syncSubusers bool) (*Connector, error) {
 	if sgClient == nil {
 		return nil, ErrSendgridClientNotProvided
 	}
@@ -127,11 +129,13 @@ func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Co
 	return &Connector{
 		client:         sgClient,
 		ignoreSubusers: ignoreSubusers,
+		syncScopes:     syncScopes,
+		syncSubusers:   syncSubusers,
 	}, nil
 }
 
 // NewLambdaConnector creates a new connector from config for lambda/containerized deployment.
-func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
 	l := ctxzap.Extract(ctx)
 
 	sendGridApiKey := cfg.SendgridApiKey
@@ -160,7 +164,10 @@ func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, _ *cli.Connec
 		return nil, nil, fmt.Errorf("baton-sendgrid: error creating client: %w", err)
 	}
 
-	cb, err := New(ctx, sendGridClient, sendgridIgnoreSubusers)
+	syncScopes := opts == nil || opts.WillSyncResourceType(ScopeResourceTypeID)
+	syncSubusers := opts == nil || opts.WillSyncResourceType(SubuserResourceTypeID)
+
+	cb, err := New(ctx, sendGridClient, sendgridIgnoreSubusers, syncScopes, syncSubusers)
 	if err != nil {
 		return nil, nil, fmt.Errorf("baton-sendgrid: error creating connector: %w", err)
 	}

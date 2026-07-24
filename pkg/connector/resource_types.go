@@ -5,6 +5,14 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
+// Resource type IDs, exported so callers (e.g. connector.go) can check
+// sync-filter membership via cli.ConnectorOpts.WillSyncResourceType without
+// duplicating the string literals.
+const (
+	ScopeResourceTypeID   = "scope"
+	SubuserResourceTypeID = "subuser"
+)
+
 // The user resource type is for all user objects from the database.
 var (
 	teammateResourceType = &v2.ResourceType{
@@ -24,12 +32,12 @@ var (
 	}
 
 	scopeResourceType = &v2.ResourceType{
-		Id:          "scope",
+		Id:          ScopeResourceTypeID,
 		DisplayName: "Scope",
 	}
 
 	subuserResourceType = &v2.ResourceType{
-		Id:          "subuser",
+		Id:          SubuserResourceTypeID,
 		DisplayName: "Subuser",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
