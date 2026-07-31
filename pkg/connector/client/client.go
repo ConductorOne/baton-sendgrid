@@ -30,6 +30,9 @@ type StatusError struct {
 }
 
 func (e *StatusError) Error() string {
+	if e.Err == nil {
+		return fmt.Sprintf("baton-sendgrid: request failed with status %d", e.StatusCode)
+	}
 	return e.Err.Error()
 }
 
@@ -502,7 +505,11 @@ func (h *SendGridClient) doRequest(
 			if err != nil {
 				return err
 			}
-			return &StatusError{StatusCode: resp.StatusCode, Err: cErr.Error()}
+			cErrErr := cErr.Error()
+			if cErrErr == nil {
+				cErrErr = fmt.Errorf("baton-sendgrid: request failed with status %d and no error details", resp.StatusCode)
+			}
+			return &StatusError{StatusCode: resp.StatusCode, Err: cErrErr}
 		}
 
 		return err
