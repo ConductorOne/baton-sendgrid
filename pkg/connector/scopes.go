@@ -76,7 +76,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 		return nil, nil, err
 	}
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername, onBehalfOf)
+	teammate, onBehalfOf, err := getTeammateWithFreshOnBehalfOf(ctx, r.client, principal, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,7 +125,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 		return nil, err
 	}
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername, onBehalfOf)
+	teammate, onBehalfOf, err := getTeammateWithFreshOnBehalfOf(ctx, r.client, principal, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, err
 	}

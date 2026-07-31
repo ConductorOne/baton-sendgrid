@@ -9,6 +9,8 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -40,6 +42,27 @@ func teammateOnBehalfOf(ctx context.Context, client SendGridClient, resource *v2
 	}
 
 	return resolveOnBehalfOfByParentID(ctx, client, parent)
+}
+
+// getTeammateWithFreshOnBehalfOf fetches the teammate using onBehalfOf, which
+// may be a cached (and possibly stale) subuser username. If SendGrid reports
+// not-found — e.g. the subuser was renamed since the cache was written — it
+// re-resolves the current username from the subuser's stable numeric ID and
+// retries once. Returns the teammate and the on-behalf-of value that worked,
+// so callers can reuse it for follow-up calls (e.g. SetTeammateScopes).
+func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, principal *v2.Resource, username, onBehalfOf string) (*models.TeammateScope, string, error) {
+	teammate, err := client.GetSpecificTeammate(ctx, username, onBehalfOf)
+	if err == nil || onBehalfOf == "" || status.Code(err) != codes.NotFound {
+		return teammate, onBehalfOf, err
+	}
+
+	freshOnBehalfOf, resolveErr := resolveOnBehalfOfByParentID(ctx, client, principal.GetParentResourceId())
+	if resolveErr != nil {
+		return nil, onBehalfOf, err
+	}
+
+	teammate, err = client.GetSpecificTeammate(ctx, username, freshOnBehalfOf)
+	return teammate, freshOnBehalfOf, err
 }
 
 // resolveOnBehalfOfByParentID resolves the on-behalf-of subuser username
