@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -11,28 +12,97 @@ import (
 )
 
 const (
-	emailKey   = "email"
-	isAdminKey = "is_admin"
+	emailKey                  = "email"
+	isAdminKey                = "is_admin"
+	subuserUsernameProfileKey = "subuser_username"
 )
 
-func teammateResource(user *models.Teammate) (*v2.Resource, error) {
-	var userStatus = v2.UserTrait_Status_STATUS_ENABLED
+// teammateOnBehalfOf returns the on-behalf-of subuser username for a
+// teammate resource, or "" for a parent-scope teammate. It prefers the
+// subuser_username stashed in the resource's own profile at sync time
+// (resource.GetProfile() — the base-Resource profile field that
+// WithUserProfile/WithResourceProfile populate — no extra API call needed).
+// It only falls back to resolving the subuser's username from its numeric
+// resource ID via the client if the profile doesn't have it (e.g. a
+// resource synced before this field existed).
+func teammateOnBehalfOf(ctx context.Context, client SendGridClient, resource *v2.Resource) (string, error) {
+	parent := resource.GetParentResourceId()
+	if parent == nil {
+		return "", nil
+	}
+
+	if profile := resource.GetProfile(); profile != nil {
+		if v, ok := profile.GetFields()[subuserUsernameProfileKey]; ok {
+			if username := v.GetStringValue(); username != "" {
+				return username, nil
+			}
+		}
+	}
+
+	return resolveOnBehalfOfByParentID(ctx, client, parent)
+}
+
+// resolveOnBehalfOfByParentID resolves the on-behalf-of subuser username
+// from a bare parent ResourceId, for callers that don't have the full
+// resource available — namely Delete, which the SDK only passes IDs to, so
+// there's no profile to read the username from. SendGrid's teammate
+// endpoints only accept a subuser *username* in the on-behalf-of header, but
+// a resource's parent only carries the subuser's numeric resource ID, so
+// this resolves it via the client.
+func resolveOnBehalfOfByParentID(ctx context.Context, client SendGridClient, parentResourceID *v2.ResourceId) (string, error) {
+	if parentResourceID == nil {
+		return "", nil
+	}
+
+	username, err := client.GetSubuserUsernameByID(ctx, parentResourceID.GetResource())
+	if err != nil {
+		return "", fmt.Errorf("baton-sendgrid: failed to resolve on-behalf-of subuser: %w", err)
+	}
+
+	return username, nil
+}
+
+// teammateResource builds a teammate resource. parentResourceID/subuserUsername
+// are empty for a parent-scope (global) teammate, or set to the owning
+// subuser's resource ID and username for a teammate that only exists inside
+// that sub-account. The resource ID is always the bare username, regardless
+// of scope, so a sub-account-local teammate and a global teammate use
+// identical ID construction. subuserUsername is stashed on the resource's
+// own profile so Grant/Revoke/Delete can recover the on-behalf-of value
+// without an extra API call — see teammateOnBehalfOf.
+func teammateResource(user *models.Teammate, parentResourceID *v2.ResourceId, subuserUsername string) (*v2.Resource, error) {
+	provisionedScope := "global"
+	if parentResourceID != nil {
+		provisionedScope = "subuser"
+	}
 
 	profile := map[string]interface{}{
-		"username":       user.Username,
-		"user_type":      user.UserType,
-		emailKey:         user.Email,
-		"is_sso":         user.IsSso,
-		isAdminKey:       user.IsAdmin,
-		"is_unified":     user.IsUnified,
-		"is_partner_sso": user.IsPartnerSso,
+		"username":          user.Username,
+		"user_type":         user.UserType,
+		emailKey:            user.Email,
+		"is_sso":            user.IsSso,
+		isAdminKey:          user.IsAdmin,
+		"is_unified":        user.IsUnified,
+		"is_partner_sso":    user.IsPartnerSso,
+		"provisioned_scope": provisionedScope,
+	}
+	if subuserUsername != "" {
+		profile[subuserUsernameProfileKey] = subuserUsername
 	}
 
 	userTraits := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
-		rs.WithStatus(userStatus),
 		rs.WithEmail(user.Email, true),
 		rs.WithUserLogin(user.Email),
+	}
+
+	// Set explicitly via the non-deprecated, resource-level options since
+	// teammateOnBehalfOf reads the profile straight off resource.GetProfile().
+	opts := []rs.ResourceOption{
+		rs.WithResourceProfile(profile),
+		rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
+	}
+	if parentResourceID != nil {
+		opts = append(opts, rs.WithParentResourceID(parentResourceID))
 	}
 
 	ret, err := rs.NewUserResource(
@@ -41,6 +111,7 @@ func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 		// Twilio doesn't have a unique ID for users, so we use the username as the ID
 		user.Username,
 		userTraits,
+		opts...,
 	)
 	if err != nil {
 		return nil, err
@@ -54,15 +125,12 @@ func scopeResource(scope Scope) (*v2.Resource, error) {
 		"name": string(scope),
 	}
 
-	roleTraitOptions := []rs.RoleTraitOption{
-		rs.WithRoleProfile(profile),
-	}
-
 	resource, err := rs.NewRoleResource(
 		string(scope),
 		scopeResourceType,
 		string(scope),
-		roleTraitOptions,
+		nil,
+		rs.WithResourceProfile(profile),
 	)
 
 	if err != nil {
@@ -73,10 +141,10 @@ func scopeResource(scope Scope) (*v2.Resource, error) {
 }
 
 func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
-	status := v2.UserTrait_Status_STATUS_ENABLED
+	status := v2.Status_RESOURCE_STATUS_ENABLED
 
 	if subuser.Disabled {
-		status = v2.UserTrait_Status_STATUS_DISABLED
+		status = v2.Status_RESOURCE_STATUS_DISABLED
 	}
 
 	profile := map[string]interface{}{
@@ -86,17 +154,15 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 		"disabled": subuser.Disabled,
 	}
 
-	subUserTraitOptions := rs.WithUserTrait(
-		rs.WithUserProfile(profile),
-		rs.WithStatus(status),
-		rs.WithEmail(subuser.Email, true),
-	)
-
 	resource, err := rs.NewResource(
 		subuser.Username,
 		subuserResourceType,
 		subuser.Id,
-		subUserTraitOptions,
+		rs.WithUserTrait(rs.WithEmail(subuser.Email, true)),
+		rs.WithResourceProfile(profile),
+		rs.WithResourceStatus(status, ""),
+		// A subuser can have teammates provisioned directly inside it.
+		rs.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: teammateResourceType.Id}),
 	)
 
 	if err != nil {
@@ -128,8 +194,6 @@ func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Reso
 	}
 
 	userTraits := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
-		rs.WithStatus(v2.UserTrait_Status_STATUS_DISABLED), // Pending invitations are always in a "Disabled" status
 		rs.WithEmail(invitation.Email, true),
 		rs.WithUserLogin(invitation.Email),
 	}
@@ -139,6 +203,9 @@ func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Reso
 		teammateInvitationResourceType,
 		resourceID,
 		userTraits,
+		rs.WithResourceProfile(profile),
+		// Pending invitations are always in a "Disabled" status.
+		rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_DISABLED, ""),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create teammate invitation resource: %w", err)

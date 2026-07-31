@@ -21,10 +21,33 @@ var (
 	ErrInvalidPaginationToken = errors.New("baton-sendgrid: invalid pagination token")
 )
 
+// StatusError wraps an API error with the HTTP status code that produced it,
+// so callers can distinguish e.g. "not found" from other failures without
+// relying on fragile string matching against the error message.
+type StatusError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *StatusError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *StatusError) Unwrap() error {
+	return e.Err
+}
+
+// IsNotFoundErr returns true if err is (or wraps) a StatusError for a 404 response.
+func IsNotFoundErr(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && se.StatusCode == http.StatusNotFound
+}
+
 var (
-	SendGridBaseUrl   = "https://api.sendgrid.com/"
-	SendGridEUBaseUrl = "https://api.eu.sendgrid.com/"
-	AuthHeaderName    = "Authorization"
+	SendGridBaseUrl      = "https://api.sendgrid.com/"
+	SendGridEUBaseUrl    = "https://api.eu.sendgrid.com/"
+	AuthHeaderName       = "Authorization"
+	OnBehalfOfHeaderName = "on-behalf-of"
 
 	RetrieveAllTeammatesEndpoint     = "v3/teammates"
 	InviteTeammateEndpoint           = "v3/teammates"
@@ -122,14 +145,19 @@ func (h *SendGridClient) InviteTeammate(ctx context.Context, email string, scope
 }
 
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-teammate
-func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string) error {
+// onBehalfOf, when non-empty, scopes the delete to a sub-account-local teammate
+// (i.e. one that only exists inside that subuser). Pass "" for parent-scope teammates.
+func (h *SendGridClient) DeleteTeammate(ctx context.Context, username string, onBehalfOf string) error {
 	uri := h.getUrl(DeleteTeammateEndpoint).JoinPath(username)
 
-	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil)
+	return h.doRequest(ctx, http.MethodDelete, uri, nil, nil, onBehalfOfOpts(onBehalfOf)...)
 }
 
 // GetSpecificTeammate Retrieve a specific teammate with scopes.
-func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username string) (*models.TeammateScope, error) {
+// onBehalfOf, when non-empty, scopes the lookup to a subuser. Pass "" to look up
+// the teammate at parent scope (used e.g. to probe whether a username already
+// exists globally, see TeammateExistsAtParentScope).
+func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username string, onBehalfOf string) (*models.TeammateScope, error) {
 	uri := h.getUrl(fmt.Sprintf(SpecificTeammateEndpoint, username))
 	var requestResponse models.TeammateScope
 
@@ -139,6 +167,7 @@ func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username strin
 		uri,
 		&requestResponse,
 		nil,
+		onBehalfOfOpts(onBehalfOf)...,
 	)
 	if err != nil {
 		return nil, err
@@ -147,9 +176,27 @@ func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username strin
 	return &requestResponse, nil
 }
 
+// TeammateExistsAtParentScope reports whether username already exists as a
+// parent-scope (global) teammate. Used to dedupe sub-account-local teammates
+// discovered via on-behalf-of against the global teammate list synced in
+// Phase A, so a global admin is never re-emitted with a different parent.
+func (h *SendGridClient) TeammateExistsAtParentScope(ctx context.Context, username string) (bool, error) {
+	_, err := h.GetSpecificTeammate(ctx, username, "")
+	if err == nil {
+		return true, nil
+	}
+	if IsNotFoundErr(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("baton-sendgrid: failed to probe parent-scope teammate %s: %w", username, err)
+}
+
 // GetTeammates List All Teammates.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/retrieve-all-teammates
-func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.Token) ([]models.Teammate, string, error) {
+// onBehalfOf, when non-empty, requests the teammates visible to that subuser
+// (a mix of global admins and sub-account-local teammates) instead of the
+// parent-scope list.
+func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.Token, onBehalfOf string) ([]models.Teammate, string, error) {
 	var response models.CommonResponse[[]models.Teammate]
 
 	offset, err := getTokenValue(pToken)
@@ -170,6 +217,7 @@ func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.To
 		uri,
 		&response,
 		nil,
+		onBehalfOfOpts(onBehalfOf)...,
 	)
 	if err != nil {
 		return nil, "", err
@@ -178,7 +226,8 @@ func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.To
 	return response.Result, nextTokenPage(offset), nil
 }
 
-func (h *SendGridClient) GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token) ([]models.TeammateSubuser, string, error) {
+// onBehalfOf, when non-empty, scopes the lookup to that subuser.
+func (h *SendGridClient) GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token, onBehalfOf string) ([]models.TeammateSubuser, string, error) {
 	var response models.TeammateSubuserResponse
 
 	uri := h.getUrl(fmt.Sprintf(TeammateSubuserAccessEndpoint, username))
@@ -202,6 +251,7 @@ func (h *SendGridClient) GetTeammatesSubAccess(ctx context.Context, username str
 		uri,
 		&response,
 		nil,
+		onBehalfOfOpts(onBehalfOf)...,
 	)
 	if err != nil {
 		return nil, "", err
@@ -280,6 +330,35 @@ func (h *SendGridClient) CreateSubuser(ctx context.Context, subuser models.Subus
 	return h.doRequest(ctx, http.MethodPost, uri, nil, subuser)
 }
 
+// GetSubuserUsernameByID resolves a subuser's username from its numeric ID.
+// SendGrid's Subusers API has no id-based lookup, only by username, so this
+// scans paginated GetSubusers results. This is only used for single-item
+// provisioning lookups (resolving the on-behalf-of subuser for Grants/Delete
+// on a sub-account-local teammate) — it is never called as part of the
+// SDK-driven List/Entitlements/Grants pagination loop.
+func (h *SendGridClient) GetSubuserUsernameByID(ctx context.Context, subuserID string) (string, error) {
+	token := &pagination.Token{}
+	for {
+		subusers, next, err := h.GetSubusers(ctx, token)
+		if err != nil {
+			return "", fmt.Errorf("baton-sendgrid: failed to list subusers while resolving subuser id %s: %w", subuserID, err)
+		}
+
+		for _, su := range subusers {
+			if strconv.Itoa(su.Id) == subuserID {
+				return su.Username, nil
+			}
+		}
+
+		if next == "" || len(subusers) == 0 {
+			break
+		}
+		token = &pagination.Token{Token: next}
+	}
+
+	return "", fmt.Errorf("baton-sendgrid: subuser with id %s not found", subuserID)
+}
+
 // DeleteSubuser Delete a Subuser.
 // https://www.twilio.com/docs/sendgrid/api-reference/subusers-api/delete-a-subuser
 func (h *SendGridClient) DeleteSubuser(ctx context.Context, username string) error {
@@ -304,7 +383,8 @@ func (h *SendGridClient) SetSubuserDisabled(ctx context.Context, username string
 
 // SetTeammateScopes
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/update-teammates-permissions
-func (h *SendGridClient) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool) error {
+// onBehalfOf, when non-empty, scopes the update to a sub-account-local teammate.
+func (h *SendGridClient) SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool, onBehalfOf string) error {
 	uri := h.getUrl(fmt.Sprintf(TeammateUpdatePermissionEndpoint, username))
 
 	body := struct {
@@ -315,7 +395,7 @@ func (h *SendGridClient) SetTeammateScopes(ctx context.Context, username string,
 		IsAdmin: isAdmin,
 	}
 
-	return h.doRequest(ctx, http.MethodPatch, uri, nil, body)
+	return h.doRequest(ctx, http.MethodPatch, uri, nil, body, onBehalfOfOpts(onBehalfOf)...)
 }
 
 // Helpers
@@ -357,24 +437,40 @@ func getTokenValue(pToken *pagination.Token) (int, error) {
 	return value, nil
 }
 
+// onBehalfOfOpts builds the optional on-behalf-of header request option.
+// Returns nil (no extra options) when onBehalfOf is empty, so the same call
+// path works for parent-scope and subuser-scoped requests.
+func onBehalfOfOpts(onBehalfOf string) []uhttp.RequestOption {
+	if onBehalfOf == "" {
+		return nil
+	}
+	return []uhttp.RequestOption{uhttp.WithHeader(OnBehalfOfHeaderName, onBehalfOf)}
+}
+
 func (h *SendGridClient) doRequest(
 	ctx context.Context,
 	method string,
 	urlAddress *url.URL,
 	res interface{},
 	body interface{},
+	extraOpts ...uhttp.RequestOption,
 ) error {
 	var (
 		resp *http.Response
 		err  error
 	)
 
+	reqOpts := []uhttp.RequestOption{
+		uhttp.WithHeader(AuthHeaderName, fmt.Sprintf("Bearer %s", h.apiKey)),
+		uhttp.WithJSONBody(body),
+	}
+	reqOpts = append(reqOpts, extraOpts...)
+
 	req, err := h.httpClient.NewRequest(
 		ctx,
 		method,
 		urlAddress,
-		uhttp.WithHeader(AuthHeaderName, fmt.Sprintf("Bearer %s", h.apiKey)),
-		uhttp.WithJSONBody(body),
+		reqOpts...,
 	)
 	if err != nil {
 		return err
@@ -406,7 +502,7 @@ func (h *SendGridClient) doRequest(
 			if err != nil {
 				return err
 			}
-			return cErr.Error()
+			return &StatusError{StatusCode: resp.StatusCode, Err: cErr.Error()}
 		}
 
 		return err

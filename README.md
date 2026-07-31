@@ -55,6 +55,20 @@ baton resources
 - Subusers (if not using `--ignore-subusers`)
 - Scopes
 
+## Teammates in sub-accounts
+
+A SendGrid sub-account (subuser) can have its own teammates that were provisioned directly
+inside that sub-account and never granted access at the parent-account level. These
+teammates are invisible to the parent account's teammates list.
+
+Unless `--ignore-subusers` is set, `baton-sendgrid` also looks inside each sub-account
+(via the SendGrid `on-behalf-of` header) for teammates that only exist there. They're synced
+as regular `teammate` resources — same ID scheme as any other teammate (`username`) — with
+their sub-account set as the parent resource, so access reviews reflect the humans who
+actually have access, not just the sub-accounts themselves. A teammate who already has
+parent-level access is not duplicated just because they can also reach one or more
+sub-accounts.
+
 # Provisioning & Deprovisioning
 
 `baton-sendgrid` supports provisioning and deprovisioning capabilities when the `--provisioning` flag is enabled:

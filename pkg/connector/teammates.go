@@ -28,19 +28,81 @@ func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return teammateResourceType
 }
 
+// List has two flows, driven by whether the SDK calls it with a parent
+// resource (subuserResource sets the ChildResourceType annotation, so the
+// SDK calls List() once per synced subuser with that subuser as parent, in
+// addition to the normal unparented call for the resource type):
+//
+//   - No parent: the parent-scope (global) teammates, unchanged. Every
+//     teammate returned here has no ParentResourceId.
+//   - Parent is a subuser: lists that subuser's teammates via the
+//     on-behalf-of header (a mix of global admins and sub-account-local
+//     teammates), and only emits the ones that don't also exist at parent
+//     scope — otherwise a global admin would be re-emitted under every
+//     subuser they can reach, flipping their ParentResourceId depending on
+//     scan order.
 func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken)
+	if parentResourceID == nil {
+		return u.listRootTeammates(ctx, opts)
+	}
+
+	return u.listSubuserTeammates(ctx, parentResourceID, opts)
+}
+
+func (u *teammateBuilder) listRootTeammates(ctx context.Context, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: failed to list teammates: %w", err)
+	}
+
+	rv := make([]*v2.Resource, 0, len(teammates))
+	for i := range teammates {
+		res, err := teammateResource(&teammates[i], nil, "")
+		if err != nil {
+			return nil, nil, err
+		}
+		rv = append(rv, res)
+	}
+
+	nextToken := ""
+	if len(teammates) != 0 {
+		nextToken = pNextToken
+	}
+
+	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
+}
+
+func (u *teammateBuilder) listSubuserTeammates(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	subuserUsername, err := u.client.GetSubuserUsernameByID(ctx, parentResourceID.GetResource())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rv := make([]*v2.Resource, len(teammates))
-	for i, teammate := range teammates {
-		us, err := teammateResource(&teammate)
+	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken, subuserUsername)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: failed to list teammates for subuser %s: %w", subuserUsername, err)
+	}
+
+	rv := make([]*v2.Resource, 0, len(teammates))
+	for i := range teammates {
+		tm := &teammates[i]
+
+		existsAtParent, err := u.client.TeammateExistsAtParentScope(ctx, tm.Username)
 		if err != nil {
 			return nil, nil, err
 		}
-		rv[i] = us
+		if existsAtParent {
+			// Already synced at parent scope. Re-emitting it here would flip
+			// its ParentResourceId depending on which subuser happens to be
+			// scanned.
+			continue
+		}
+
+		res, err := teammateResource(tm, parentResourceID, subuserUsername)
+		if err != nil {
+			return nil, nil, err
+		}
+		rv = append(rv, res)
 	}
 
 	nextToken := ""
@@ -68,10 +130,15 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 
 	username := resource.Id.Resource
 
-	// Subuser access grants.
-	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken)
+	onBehalfOf, err := teammateOnBehalfOf(ctx, u.client, resource)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Subuser access grants.
+	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, username, &opts.PageToken, onBehalfOf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate subuser access for %s: %w", username, err)
 	}
 
 	logger := ctxzap.Extract(ctx)
@@ -87,9 +154,9 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 
 	// Scope grants — only on the first (and only) page to avoid duplicate API calls.
 	if opts.PageToken.Token == "" {
-		specificTeammate, err := u.client.GetSpecificTeammate(ctx, username)
+		specificTeammate, err := u.client.GetSpecificTeammate(ctx, username, onBehalfOf)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate %s: %w", username, err)
 		}
 
 		for _, scope := range specificTeammate.Scopes {
@@ -108,25 +175,29 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil
 }
 
-func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId, parentResourceID *v2.ResourceId) (annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
 	if resourceId.ResourceType != teammateResourceType.Id {
-		return nil, fmt.Errorf("invalid resource type: expected %s, got %s", teammateResourceType.Id, resourceId.ResourceType)
+		return nil, fmt.Errorf("baton-sendgrid: invalid resource type: expected %s, got %s", teammateResourceType.Id, resourceId.ResourceType)
 	}
 
 	username := resourceId.GetResource()
 	if username == "" {
-		return nil, fmt.Errorf("missing resource ID (username)")
+		return nil, fmt.Errorf("baton-sendgrid: missing resource ID (username)")
 	}
 
-	if err := u.client.DeleteTeammate(ctx, username); err != nil {
+	onBehalfOf, err := resolveOnBehalfOfByParentID(ctx, u.client, parentResourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := u.client.DeleteTeammate(ctx, username, onBehalfOf); err != nil {
 		if strings.Contains(err.Error(), "teammate does not exist") {
-			l.Warn("Teammate not found, may have been already deleted")
+			l.Warn("baton-sendgrid: teammate not found, may have been already deleted", zap.String("username", username))
 			return nil, nil
 		}
-		l.Error("failed to delete teammate", zap.Error(err))
-		return nil, err
+		return nil, fmt.Errorf("baton-sendgrid: failed to delete teammate %s: %w", username, err)
 	}
 
 	return nil, nil

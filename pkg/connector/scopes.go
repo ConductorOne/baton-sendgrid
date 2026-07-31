@@ -71,7 +71,12 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 	scopeId := entitlement.Resource.Id.Resource
 	principalUsername := principal.Id.Resource
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	onBehalfOf, err := teammateOnBehalfOf(ctx, r.client, principal)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,7 +96,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 
 	teammate.Scopes = append(teammate.Scopes, scopeId)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin, onBehalfOf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +120,12 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 		return nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
 	}
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	onBehalfOf, err := teammateOnBehalfOf(ctx, r.client, principal)
+	if err != nil {
+		return nil, err
+	}
+
+	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +145,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 
 	teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin, onBehalfOf)
 	if err != nil {
 		return nil, err
 	}
