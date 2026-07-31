@@ -29,8 +29,6 @@ func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 	}
 
 	userTraits := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
-		rs.WithStatus(userStatus),
 		rs.WithEmail(user.Email, true),
 		rs.WithUserLogin(user.Email),
 	}
@@ -41,6 +39,8 @@ func teammateResource(user *models.Teammate) (*v2.Resource, error) {
 		// Twilio doesn't have a unique ID for users, so we use the username as the ID
 		user.Username,
 		userTraits,
+		rs.WithResourceProfile(profile),
+		rs.WithResourceStatus(v2.Status_ResourceStatus(userStatus), ""),
 	)
 	if err != nil {
 		return nil, err
@@ -54,15 +54,14 @@ func scopeResource(scope Scope) (*v2.Resource, error) {
 		"name": string(scope),
 	}
 
-	roleTraitOptions := []rs.RoleTraitOption{
-		rs.WithRoleProfile(profile),
-	}
+	roleTraitOptions := []rs.RoleTraitOption{}
 
 	resource, err := rs.NewRoleResource(
 		string(scope),
 		scopeResourceType,
 		string(scope),
 		roleTraitOptions,
+		rs.WithResourceProfile(profile),
 	)
 
 	if err != nil {
@@ -87,8 +86,6 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 	}
 
 	subUserTraitOptions := rs.WithUserTrait(
-		rs.WithUserProfile(profile),
-		rs.WithStatus(status),
 		rs.WithEmail(subuser.Email, true),
 	)
 
@@ -97,6 +94,8 @@ func subuserResource(subuser models.Subuser) (*v2.Resource, error) {
 		subuserResourceType,
 		subuser.Id,
 		subUserTraitOptions,
+		rs.WithResourceProfile(profile),
+		rs.WithResourceStatus(v2.Status_ResourceStatus(status), ""),
 	)
 
 	if err != nil {
@@ -128,8 +127,6 @@ func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Reso
 	}
 
 	userTraits := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
-		rs.WithStatus(v2.UserTrait_Status_STATUS_DISABLED), // Pending invitations are always in a "Disabled" status
 		rs.WithEmail(invitation.Email, true),
 		rs.WithUserLogin(invitation.Email),
 	}
@@ -139,6 +136,9 @@ func teammateInvitationResource(invitation *models.TeammateInvitation) (*v2.Reso
 		teammateInvitationResourceType,
 		resourceID,
 		userTraits,
+		rs.WithResourceProfile(profile),
+		// Pending invitations are always in a "Disabled" status.
+		rs.WithResourceStatus(v2.Status_RESOURCE_STATUS_DISABLED, ""),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create teammate invitation resource: %w", err)
