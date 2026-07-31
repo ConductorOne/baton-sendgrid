@@ -29,10 +29,10 @@ type fakeSendGridClient struct {
 	subuserTeammates map[string][]*models.Teammate
 }
 
-func (f *fakeSendGridClient) GetTeammates(_ context.Context, pToken *pagination.Token, onBehalfOf string) ([]*models.Teammate, string, error) {
+func (f *fakeSendGridClient) GetTeammates(_ context.Context, pToken *pagination.Token, onBehalfOf sgclient.OnBehalfOf) ([]*models.Teammate, string, error) {
 	list := f.globalTeammates
 	if onBehalfOf != "" {
-		list = f.subuserTeammates[onBehalfOf]
+		list = f.subuserTeammates[string(onBehalfOf)]
 	}
 
 	return pageOneAtATime(list, pToken)

@@ -92,7 +92,7 @@ func (u *teammateBuilder) listSubuserTeammates(ctx context.Context, parentResour
 		return nil, nil, err
 	}
 
-	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken, subuserUsername)
+	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken, sgclient.OnBehalfOf(subuserUsername))
 	if err != nil {
 		if status.Code(err) == codes.PermissionDenied {
 			l.Debug("baton-sendgrid: missing permission to list teammates for subuser, skipping", zap.String("subuser_username", subuserUsername), zap.Error(err))

@@ -165,7 +165,7 @@ func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username Usern
 // onBehalfOf, when non-empty, requests the teammates visible to that subuser
 // (a mix of global admins and sub-account-local teammates) instead of the
 // parent-scope list.
-func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.Token, onBehalfOf string) ([]*models.Teammate, string, error) {
+func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.Token, onBehalfOf OnBehalfOf) ([]*models.Teammate, string, error) {
 	var response models.CommonResponse[[]*models.Teammate]
 
 	offset, err := getTokenValue(pToken)
@@ -186,7 +186,7 @@ func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.To
 		uri,
 		&response,
 		nil,
-		onBehalfOfOpts(OnBehalfOf(onBehalfOf))...,
+		onBehalfOfOpts(onBehalfOf)...,
 	)
 	if err != nil {
 		return nil, "", err
