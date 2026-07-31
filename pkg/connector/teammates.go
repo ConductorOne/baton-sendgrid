@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -73,13 +74,24 @@ func (u *teammateBuilder) listRootTeammates(ctx context.Context, opts rs.SyncOpA
 }
 
 func (u *teammateBuilder) listSubuserTeammates(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	subuserUsername, err := u.client.GetSubuserUsernameByID(ctx, parentResourceID.GetResource())
+	l := ctxzap.Extract(ctx)
+	subuserID := parentResourceID.GetResource()
+
+	subuserUsername, err := u.client.GetSubuserUsernameByID(ctx, subuserID)
 	if err != nil {
+		if client.IsForbiddenErr(err) {
+			l.Debug("baton-sendgrid: missing permission to resolve subuser, skipping its teammates", zap.String("subuser_id", subuserID), zap.Error(err))
+			return nil, &rs.SyncOpResults{NextPageToken: ""}, nil
+		}
 		return nil, nil, err
 	}
 
 	teammates, pNextToken, err := u.client.GetTeammates(ctx, &opts.PageToken, subuserUsername)
 	if err != nil {
+		if client.IsForbiddenErr(err) {
+			l.Debug("baton-sendgrid: missing permission to list teammates for subuser, skipping", zap.String("subuser_username", subuserUsername), zap.Error(err))
+			return nil, &rs.SyncOpResults{NextPageToken: ""}, nil
+		}
 		return nil, nil, fmt.Errorf("baton-sendgrid: failed to list teammates for subuser %s: %w", subuserUsername, err)
 	}
 
@@ -193,7 +205,7 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId,
 	}
 
 	if err := u.client.DeleteTeammate(ctx, username, onBehalfOf); err != nil {
-		if strings.Contains(err.Error(), "teammate does not exist") {
+		if client.IsNotFoundErr(err) || strings.Contains(err.Error(), "teammate does not exist") {
 			l.Warn("baton-sendgrid: teammate not found, may have been already deleted", zap.String("username", username))
 			return nil, nil
 		}

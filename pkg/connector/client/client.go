@@ -46,6 +46,13 @@ func IsNotFoundErr(err error) bool {
 	return errors.As(err, &se) && se.StatusCode == http.StatusNotFound
 }
 
+// IsForbiddenErr returns true if err is (or wraps) a StatusError for a 403
+// response, e.g. the API key lacks permission to act on/for a given subuser.
+func IsForbiddenErr(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && se.StatusCode == http.StatusForbidden
+}
+
 var (
 	SendGridBaseUrl      = "https://api.sendgrid.com/"
 	SendGridEUBaseUrl    = "https://api.eu.sendgrid.com/"
@@ -335,10 +342,12 @@ func (h *SendGridClient) CreateSubuser(ctx context.Context, subuser models.Subus
 
 // GetSubuserUsernameByID resolves a subuser's username from its numeric ID.
 // SendGrid's Subusers API has no id-based lookup, only by username, so this
-// scans paginated GetSubusers results. This is only used for single-item
+// scans paginated GetSubusers results. It is used for single-item
 // provisioning lookups (resolving the on-behalf-of subuser for Grants/Delete
-// on a sub-account-local teammate) — it is never called as part of the
-// SDK-driven List/Entitlements/Grants pagination loop.
+// on a sub-account-local teammate), and is also called once per page from
+// listSubuserTeammates as part of the SDK-driven List() pagination loop —
+// each call re-scans all subuser pages from scratch, so callers that need
+// this repeatedly for the same subuser should cache the result.
 func (h *SendGridClient) GetSubuserUsernameByID(ctx context.Context, subuserID string) (string, error) {
 	token := &pagination.Token{}
 	for {
@@ -493,11 +502,11 @@ func (h *SendGridClient) doRequest(
 
 	if resp != nil {
 		if resp.StatusCode == http.StatusUnauthorized {
-			return errors.New("unauthorized")
+			return &StatusError{StatusCode: resp.StatusCode, Err: errors.New("unauthorized")}
 		}
 
 		if resp.StatusCode == http.StatusForbidden {
-			return errors.New("forbidden")
+			return &StatusError{StatusCode: resp.StatusCode, Err: errors.New("forbidden")}
 		}
 
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
