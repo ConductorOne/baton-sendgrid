@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"strconv"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
@@ -25,6 +26,13 @@ func (r *subuserBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return subuserResourceType
 }
 
+// List is already correctly SDK-driven (one page per call, no internal
+// pagination loop). As a side effect, it writes each subuser's id->username
+// mapping into opts.Session, so teammateBuilder can resolve a subuser's
+// on-behalf-of username (getSubuserUsername in teammates.go) via a plain
+// session read instead of its own scan — the SDK can't call this connector's
+// child List() for a subuser before that subuser has been yielded here, so
+// the entry is guaranteed to already be present by the time it's needed.
 func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	var rv []*v2.Resource
 
@@ -44,6 +52,11 @@ func (r *subuserBuilder) List(ctx context.Context, parentResourceID *v2.Resource
 		}
 
 		rv = append(rv, rb)
+
+		if opts.Session != nil {
+			key := subuserUsernameSessionKeyPrefix + strconv.Itoa(subuser.Id)
+			_ = opts.Session.Set(ctx, key, []byte(subuser.Username))
+		}
 	}
 
 	nextToken := ""

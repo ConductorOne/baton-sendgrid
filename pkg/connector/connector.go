@@ -34,14 +34,13 @@ var DefaultTeammateScopes = []string{"user.profile.read"}
 type SendGridClient interface {
 	InviteTeammate(ctx context.Context, email string, scopes []string, isAdmin bool) (*models.TeammateInvitation, error)
 
-	GetSpecificTeammate(ctx context.Context, username string, onBehalfOf string) (*models.TeammateScope, error)
-	TeammateExistsAtParentScope(ctx context.Context, username string) (bool, error)
-	GetTeammates(ctx context.Context, pToken *pagination.Token, onBehalfOf string) ([]models.Teammate, string, error)
-	DeleteTeammate(ctx context.Context, username string, onBehalfOf string) error
-	GetTeammatesSubAccess(ctx context.Context, username string, pToken *pagination.Token, onBehalfOf string) ([]models.TeammateSubuser, string, error)
+	GetSpecificTeammate(ctx context.Context, username client.Username, onBehalfOf client.OnBehalfOf) (*models.TeammateScope, error)
+	GetTeammates(ctx context.Context, pToken *pagination.Token, onBehalfOf string) ([]*models.Teammate, string, error)
+	DeleteTeammate(ctx context.Context, username client.Username, onBehalfOf client.OnBehalfOf) error
+	GetTeammatesSubAccess(ctx context.Context, username client.Username, pToken *pagination.Token, onBehalfOf client.OnBehalfOf) ([]*models.TeammateSubuser, string, error)
 	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]*models.TeammateInvitation, string, error)
 	DeletePendingTeammate(ctx context.Context, token string) error
-	SetTeammateScopes(ctx context.Context, username string, scopes []string, isAdmin bool, onBehalfOf string) error
+	SetTeammateScopes(ctx context.Context, username client.Username, scopes []string, isAdmin bool, onBehalfOf client.OnBehalfOf) error
 
 	GetSubusers(ctx context.Context, pToken *pagination.Token) ([]models.Subuser, string, error)
 	GetSubuserUsernameByID(ctx context.Context, subuserID string) (string, error)

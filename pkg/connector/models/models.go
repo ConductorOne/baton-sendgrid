@@ -76,8 +76,8 @@ type NextParams struct {
 }
 
 type TeammateSubuserResponse struct {
-	HasRestrictedSubuserAccess bool              `json:"has_restricted_subuser_access"`
-	SubuserAccess              []TeammateSubuser `json:"subuser_access"`
+	HasRestrictedSubuserAccess bool               `json:"has_restricted_subuser_access"`
+	SubuserAccess              []*TeammateSubuser `json:"subuser_access"`
 	Metadata                   struct {
 		NextParams NextParams `json:"next_params,omitempty"`
 	} `json:"_metadata"`

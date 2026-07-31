@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 
+	sgclient "github.com/conductorone/baton-sendgrid/pkg/connector/client"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
@@ -96,7 +98,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 
 	teammate.Scopes = append(teammate.Scopes, scopeId)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin, onBehalfOf)
+	err = r.client.SetTeammateScopes(ctx, sgclient.Username(principalUsername), teammate.Scopes, teammate.IsAdmin, sgclient.OnBehalfOf(onBehalfOf))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -145,7 +147,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 
 	teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin, onBehalfOf)
+	err = r.client.SetTeammateScopes(ctx, sgclient.Username(principalUsername), teammate.Scopes, teammate.IsAdmin, sgclient.OnBehalfOf(onBehalfOf))
 	if err != nil {
 		return nil, err
 	}

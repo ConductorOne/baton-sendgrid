@@ -6,12 +6,15 @@ import (
 	"strconv"
 	"testing"
 
+	sgclient "github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // fakeSendGridClient is a minimal, page_size=1-forcing implementation of
@@ -20,13 +23,13 @@ import (
 type fakeSendGridClient struct {
 	SendGridClient
 
-	globalTeammates []models.Teammate
+	globalTeammates []*models.Teammate
 	subusers        []models.Subuser
 	// subuserTeammates maps subuser username -> teammates visible to it via on-behalf-of.
-	subuserTeammates map[string][]models.Teammate
+	subuserTeammates map[string][]*models.Teammate
 }
 
-func (f *fakeSendGridClient) GetTeammates(_ context.Context, pToken *pagination.Token, onBehalfOf string) ([]models.Teammate, string, error) {
+func (f *fakeSendGridClient) GetTeammates(_ context.Context, pToken *pagination.Token, onBehalfOf string) ([]*models.Teammate, string, error) {
 	list := f.globalTeammates
 	if onBehalfOf != "" {
 		list = f.subuserTeammates[onBehalfOf]
@@ -48,13 +51,16 @@ func (f *fakeSendGridClient) GetSubuserUsernameByID(_ context.Context, subuserID
 	return "", fmt.Errorf("subuser %s not found", subuserID)
 }
 
-func (f *fakeSendGridClient) TeammateExistsAtParentScope(_ context.Context, username string) (bool, error) {
+// GetSpecificTeammate backs isParentScopeTeammate's dedup check: onBehalfOf
+// "" means "does this username exist at parent scope", answered against
+// globalTeammates, mirroring the real API's 404-for-missing behavior.
+func (f *fakeSendGridClient) GetSpecificTeammate(_ context.Context, username sgclient.Username, _ sgclient.OnBehalfOf) (*models.TeammateScope, error) {
 	for _, tm := range f.globalTeammates {
-		if tm.Username == username {
-			return true, nil
+		if tm.Username == string(username) {
+			return &models.TeammateScope{Teammate: *tm}, nil
 		}
 	}
-	return false, nil
+	return nil, status.Error(codes.NotFound, "teammate does not exist")
 }
 
 // pageOneAtATime always returns exactly one item per call, forcing the same
@@ -109,7 +115,7 @@ func drainTeammateList(t *testing.T, tb *teammateBuilder, parentResourceID *v2.R
 
 func TestTeammateBuilder_List_RootTeammates(t *testing.T) {
 	client := &fakeSendGridClient{
-		globalTeammates: []models.Teammate{
+		globalTeammates: []*models.Teammate{
 			{Username: "global-admin", Email: "global-admin@example.com"},
 			{Username: "global-viewer", Email: "global-viewer@example.com"},
 		},
@@ -126,13 +132,13 @@ func TestTeammateBuilder_List_RootTeammates(t *testing.T) {
 
 func TestTeammateBuilder_List_SubuserTeammates(t *testing.T) {
 	client := &fakeSendGridClient{
-		globalTeammates: []models.Teammate{
+		globalTeammates: []*models.Teammate{
 			{Username: "global-admin", Email: "global-admin@example.com"},
 		},
 		subusers: []models.Subuser{
 			{Id: 1, Username: "sub1", Email: "sub1@example.com"},
 		},
-		subuserTeammates: map[string][]models.Teammate{
+		subuserTeammates: map[string][]*models.Teammate{
 			// global-admin also has access to sub1 — must NOT be re-emitted
 			// under sub1's parent.
 			"sub1": {

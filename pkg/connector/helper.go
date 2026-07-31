@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	sgclient "github.com/conductorone/baton-sendgrid/pkg/connector/client"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -45,13 +46,16 @@ func teammateOnBehalfOf(ctx context.Context, client SendGridClient, resource *v2
 }
 
 // getTeammateWithFreshOnBehalfOf fetches the teammate using onBehalfOf, which
-// may be a cached (and possibly stale) subuser username. If SendGrid reports
-// not-found — e.g. the subuser was renamed since the cache was written — it
-// re-resolves the current username from the subuser's stable numeric ID and
-// retries once. Returns the teammate and the on-behalf-of value that worked,
-// so callers can reuse it for follow-up calls (e.g. SetTeammateScopes).
+// may be a stale subuser username cached on the resource's profile. If
+// SendGrid reports not-found — e.g. the subuser was renamed since the cache
+// was written — it re-resolves the current username from the subuser's
+// stable numeric ID and retries once. Grant/Revoke/Delete are infrequent,
+// one-off calls, so this re-resolution is a plain, uncached client call each
+// time — not worth caching. Returns the teammate and the on-behalf-of value
+// that worked, so callers can reuse it for follow-up calls (e.g.
+// SetTeammateScopes).
 func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, principal *v2.Resource, username, onBehalfOf string) (*models.TeammateScope, string, error) {
-	teammate, err := client.GetSpecificTeammate(ctx, username, onBehalfOf)
+	teammate, err := client.GetSpecificTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(onBehalfOf))
 	if err == nil || onBehalfOf == "" || status.Code(err) != codes.NotFound {
 		return teammate, onBehalfOf, err
 	}
@@ -61,7 +65,7 @@ func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, 
 		return nil, onBehalfOf, err
 	}
 
-	teammate, err = client.GetSpecificTeammate(ctx, username, freshOnBehalfOf)
+	teammate, err = client.GetSpecificTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(freshOnBehalfOf))
 	return teammate, freshOnBehalfOf, err
 }
 
@@ -71,7 +75,9 @@ func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, 
 // there's no profile to read the username from. SendGrid's teammate
 // endpoints only accept a subuser *username* in the on-behalf-of header, but
 // a resource's parent only carries the subuser's numeric resource ID, so
-// this resolves it via the client.
+// this resolves it via the client. Grant/Revoke/Delete happen occasionally,
+// not in a pagination loop, so this is a plain, uncached call — no
+// caching needed for this path.
 func resolveOnBehalfOfByParentID(ctx context.Context, client SendGridClient, parentResourceID *v2.ResourceId) (string, error) {
 	if parentResourceID == nil {
 		return "", nil
