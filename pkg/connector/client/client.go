@@ -14,44 +14,14 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
 	ErrApiKeyIsEmpty          = errors.New("baton-sendgrid: api key is empty")
 	ErrInvalidPaginationToken = errors.New("baton-sendgrid: invalid pagination token")
 )
-
-// StatusError wraps an API error with the HTTP status code that produced it,
-// so callers can distinguish e.g. "not found" from other failures without
-// relying on fragile string matching against the error message.
-type StatusError struct {
-	StatusCode int
-	Err        error
-}
-
-func (e *StatusError) Error() string {
-	if e.Err == nil {
-		return fmt.Sprintf("baton-sendgrid: request failed with status %d", e.StatusCode)
-	}
-	return e.Err.Error()
-}
-
-func (e *StatusError) Unwrap() error {
-	return e.Err
-}
-
-// IsNotFoundErr returns true if err is (or wraps) a StatusError for a 404 response.
-func IsNotFoundErr(err error) bool {
-	var se *StatusError
-	return errors.As(err, &se) && se.StatusCode == http.StatusNotFound
-}
-
-// IsForbiddenErr returns true if err is (or wraps) a StatusError for a 403
-// response, e.g. the API key lacks permission to act on/for a given subuser.
-func IsForbiddenErr(err error) bool {
-	var se *StatusError
-	return errors.As(err, &se) && se.StatusCode == http.StatusForbidden
-}
 
 var (
 	SendGridBaseUrl      = "https://api.sendgrid.com/"
@@ -195,7 +165,7 @@ func (h *SendGridClient) TeammateExistsAtParentScope(ctx context.Context, userna
 	if err == nil {
 		return true, nil
 	}
-	if IsNotFoundErr(err) {
+	if status.Code(err) == codes.NotFound {
 		return false, nil
 	}
 	return false, fmt.Errorf("baton-sendgrid: failed to probe parent-scope teammate %s: %w", username, err)
@@ -501,24 +471,20 @@ func (h *SendGridClient) doRequest(
 	}
 
 	if resp != nil {
-		if resp.StatusCode == http.StatusUnauthorized {
-			return &StatusError{StatusCode: resp.StatusCode, Err: errors.New("unauthorized")}
-		}
-
-		if resp.StatusCode == http.StatusForbidden {
-			return &StatusError{StatusCode: resp.StatusCode, Err: errors.New("forbidden")}
-		}
-
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
-			cErr, err := getError(resp)
-			if err != nil {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusBadRequest:
+			// err here already carries the right gRPC status code for this
+			// HTTP status (uhttp.BaseHttpClient.Do wraps it automatically via
+			// GrpcCodeFromHTTPStatus) — join it with the response body's
+			// field-level detail rather than replacing it, so callers can
+			// keep checking status.Code(err). errors.Join ignores nil
+			// arguments, so this is safe even when the body has no fielded
+			// errors or fails to parse.
+			cErr, parseErr := getError(resp)
+			if parseErr != nil {
 				return err
 			}
-			cErrErr := cErr.Error()
-			if cErrErr == nil {
-				cErrErr = fmt.Errorf("baton-sendgrid: request failed with status %d and no error details", resp.StatusCode)
-			}
-			return &StatusError{StatusCode: resp.StatusCode, Err: cErrErr}
+			return errors.Join(err, cErr.Error())
 		}
 
 		return err
