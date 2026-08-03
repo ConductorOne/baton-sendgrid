@@ -192,7 +192,7 @@ func (h *SendGridClient) GetTeammates(ctx context.Context, pToken *pagination.To
 		return nil, "", err
 	}
 
-	return response.Result, nextTokenPage(offset), nil
+	return response.Result, nextTokenPage(offset, len(response.Result)), nil
 }
 
 // onBehalfOf, when non-empty, scopes the lookup to that subuser.
@@ -256,7 +256,7 @@ func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagina
 		return nil, "", err
 	}
 
-	return response.Result, nextTokenPage(offset), nil
+	return response.Result, nextTokenPage(offset, len(response.Result)), nil
 }
 
 // DeletePendingTeammate Delete a pending teammate invitation.
@@ -288,7 +288,7 @@ func (h *SendGridClient) GetSubusers(ctx context.Context, pToken *pagination.Tok
 		return nil, "", err
 	}
 
-	return response, nextTokenPage(offset), nil
+	return response, nextTokenPage(offset, len(response)), nil
 }
 
 // CreateSubuser Create a Subuser.
@@ -387,8 +387,8 @@ func getError(resp *http.Response) (CustomErr, error) {
 	return cErr, nil
 }
 
-func nextTokenPage(offset int) string {
-	return strconv.Itoa(offset + 1)
+func nextTokenPage(offset, count int) string {
+	return strconv.Itoa(offset + count)
 }
 
 func getTokenValue(pToken *pagination.Token) (int, error) {
