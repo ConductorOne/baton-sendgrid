@@ -138,6 +138,12 @@ func (u *teammateBuilder) getSubuserUsername(ctx context.Context, opts rs.SyncOp
 		}
 	}
 
+	// Last-resort fallback: subuserBuilder.List (subuser.go) writes every
+	// subuser's id->username mapping into the session as it syncs, and the
+	// SDK always yields a subuser from its parent List() before calling this
+	// connector's child List() for that subuser — so the cache lookup above
+	// should always hit in practice. This scan-based call only runs if that
+	// invariant is ever violated (e.g. no session configured).
 	username, err := u.client.GetSubuserUsernameByID(ctx, subuserID)
 	if err != nil {
 		return "", err
@@ -266,12 +272,13 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId,
 
 	onBehalfOf, err := resolveOnBehalfOfByParentID(ctx, u.client, parentResourceID)
 	if err != nil {
+		l.Warn("baton-sendgrid: failed to resolve on-behalf-of subuser for teammate delete", zap.String("username", username), zap.Error(err))
 		return nil, err
 	}
 
 	if err := u.client.DeleteTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(onBehalfOf)); err != nil {
 		if status.Code(err) == codes.NotFound || strings.Contains(err.Error(), "teammate does not exist") {
-			l.Warn("baton-sendgrid: teammate not found, may have been already deleted", zap.String("username", username))
+			l.Debug("baton-sendgrid: teammate not found, may have been already deleted", zap.String("username", username))
 			return nil, nil
 		}
 		return nil, fmt.Errorf("baton-sendgrid: failed to delete teammate %s: %w", username, err)

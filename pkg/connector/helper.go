@@ -42,6 +42,11 @@ func teammateOnBehalfOf(ctx context.Context, client SendGridClient, resource *v2
 		}
 	}
 
+	// Legacy-data fallback: teammateResource always stashes subuser_username
+	// on the profile for subuser-scoped teammates synced by the current
+	// code, so Grant/Revoke (the only callers that reach here without a
+	// fresher sync in between) are not likely to hit this — it only applies
+	// to a resource synced before that profile field existed.
 	return resolveOnBehalfOfByParentID(ctx, client, parent)
 }
 
@@ -60,6 +65,8 @@ func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, 
 		return teammate, onBehalfOf, err
 	}
 
+	// Last-resort retry: only reached when the cached onBehalfOf just 404'd,
+	// which should be rare (a subuser rename since the cache was written).
 	freshOnBehalfOf, resolveErr := resolveOnBehalfOfByParentID(ctx, client, principal.GetParentResourceId())
 	if resolveErr != nil {
 		return nil, onBehalfOf, err
