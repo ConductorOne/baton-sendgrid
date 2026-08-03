@@ -24,6 +24,7 @@ const (
 
 	teammateAtParentScopeSessionKeyPrefix = "teammate_at_parent_scope:"
 	subuserUsernameSessionKeyPrefix       = "teammate_subuser_username:"
+	teammateEmittedSessionKeyPrefix       = "teammate_emitted_under_subuser:"
 )
 
 type teammateBuilder struct {
@@ -46,7 +47,10 @@ func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 //     teammates), and only emits the ones that don't also exist at parent
 //     scope — otherwise a global admin would be re-emitted under every
 //     subuser they can reach, flipping their ParentResourceId depending on
-//     scan order.
+//     scan order. A teammate restricted to a group of Subusers (SendGrid's
+//     subuser_access can list more than one) has the same problem without
+//     parent-scope access, so emission is also deduped against teammates
+//     already emitted under an earlier subuser in this sync.
 func (u *teammateBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId, opts rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
 	if parentResourceID == nil {
 		return u.listRootTeammates(ctx, opts)
@@ -103,12 +107,11 @@ func (u *teammateBuilder) listSubuserTeammates(ctx context.Context, parentResour
 
 	var rv []*v2.Resource
 	for _, tm := range teammates {
-		existsAtParent, err := u.isParentScopeTeammate(ctx, opts, tm.Username)
+		shouldEmit, err := u.shouldEmitTeammate(ctx, opts, tm.Username)
 		if err != nil {
 			return nil, nil, err
 		}
-		if existsAtParent {
-			// Already synced at parent scope. Skipping.
+		if !shouldEmit {
 			continue
 		}
 
@@ -148,6 +151,30 @@ func (u *teammateBuilder) getSubuserUsername(ctx context.Context, opts rs.SyncOp
 	return username, nil
 }
 
+// shouldEmitTeammate decides whether a teammate discovered under a subuser
+// (via on-behalf-of) should be emitted as a resource for that subuser. It is
+// false when the teammate is already covered elsewhere in this sync: either
+// because it exists at parent scope (isParentScopeTeammate), or because it
+// was already emitted under an earlier subuser (markTeammateEmitted) — the
+// latter covers a teammate restricted to a group of Subusers rather than a
+// single one.
+func (u *teammateBuilder) shouldEmitTeammate(ctx context.Context, opts rs.SyncOpAttrs, username string) (bool, error) {
+	existsAtParent, err := u.isParentScopeTeammate(ctx, opts, username)
+	if err != nil {
+		return false, err
+	}
+	if existsAtParent {
+		return false, nil
+	}
+
+	alreadyEmitted, err := u.markTeammateEmitted(ctx, opts, username)
+	if err != nil {
+		return false, err
+	}
+
+	return !alreadyEmitted, nil
+}
+
 // isParentScopeTeammate reports whether username already exists as a
 // parent-scope (global) teammate, used to dedupe sub-account-local teammates
 // discovered via on-behalf-of.
@@ -174,6 +201,29 @@ func (u *teammateBuilder) isParentScopeTeammate(ctx context.Context, opts rs.Syn
 	}
 
 	return exists, nil
+}
+
+// markTeammateEmitted records that username has been emitted as a
+// subuser-scoped teammate resource during this sync, returning true if it
+// was already recorded for an earlier subuser. This guards against a
+// teammate restricted to a group of Subusers being emitted once per subuser
+// with the same resource ID (username) but a different
+// ParentResourceId/subuser_username.
+func (u *teammateBuilder) markTeammateEmitted(ctx context.Context, opts rs.SyncOpAttrs, username string) (bool, error) {
+	if opts.Session == nil {
+		return false, nil
+	}
+
+	key := teammateEmittedSessionKeyPrefix + username
+	if _, found, err := opts.Session.Get(ctx, key); err == nil && found {
+		return true, nil
+	}
+
+	if err := opts.Session.Set(ctx, key, []byte("1")); err != nil {
+		return false, fmt.Errorf("baton-sendgrid: failed to record emitted teammate %s: %w", username, err)
+	}
+
+	return false, nil
 }
 
 func (u *teammateBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {

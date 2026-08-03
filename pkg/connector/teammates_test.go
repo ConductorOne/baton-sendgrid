@@ -12,10 +12,66 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// fakeSessionStore is a minimal in-memory sessions.SessionStore, sufficient
+// to exercise the Get/Set pairs teammateBuilder uses to dedupe across
+// separate List() calls within a single sync.
+type fakeSessionStore struct {
+	data map[string][]byte
+}
+
+func newFakeSessionStore() *fakeSessionStore {
+	return &fakeSessionStore{data: map[string][]byte{}}
+}
+
+func (f *fakeSessionStore) Get(_ context.Context, key string, _ ...sessions.SessionStoreOption) ([]byte, bool, error) {
+	v, ok := f.data[key]
+	return v, ok, nil
+}
+
+func (f *fakeSessionStore) GetMany(_ context.Context, keys []string, _ ...sessions.SessionStoreOption) (map[string][]byte, []string, error) {
+	found := map[string][]byte{}
+	var missing []string
+	for _, k := range keys {
+		if v, ok := f.data[k]; ok {
+			found[k] = v
+		} else {
+			missing = append(missing, k)
+		}
+	}
+	return found, missing, nil
+}
+
+func (f *fakeSessionStore) Set(_ context.Context, key string, value []byte, _ ...sessions.SessionStoreOption) error {
+	f.data[key] = value
+	return nil
+}
+
+func (f *fakeSessionStore) SetMany(_ context.Context, values map[string][]byte, _ ...sessions.SessionStoreOption) error {
+	for k, v := range values {
+		f.data[k] = v
+	}
+	return nil
+}
+
+func (f *fakeSessionStore) Delete(_ context.Context, key string, _ ...sessions.SessionStoreOption) error {
+	delete(f.data, key)
+	return nil
+}
+
+func (f *fakeSessionStore) Clear(_ context.Context, _ ...sessions.SessionStoreOption) error {
+	f.data = map[string][]byte{}
+	return nil
+}
+
+func (f *fakeSessionStore) GetAll(_ context.Context, _ string, _ ...sessions.SessionStoreOption) (map[string][]byte, string, error) {
+	return f.data, "", nil
+}
 
 // fakeSendGridClient is a minimal, page_size=1-forcing implementation of
 // SendGridClient used to exercise teammateBuilder.List's two flows (no
@@ -91,14 +147,17 @@ func pageOneAtATime[T any](items []T, pToken *pagination.Token) ([]T, string, er
 
 // drainTeammateList repeatedly calls List with the given parent (nil for the
 // root/no-parent flow, or a subuser's ResourceId for the child flow) until
-// pagination terminates, guarding against an infinite loop.
-func drainTeammateList(t *testing.T, tb *teammateBuilder, parentResourceID *v2.ResourceId) []*v2.Resource {
+// pagination terminates, guarding against an infinite loop. session may be
+// nil (matching production calls where no session is configured) or shared
+// across multiple drainTeammateList calls to simulate cross-subuser session
+// state within one sync.
+func drainTeammateList(t *testing.T, tb *teammateBuilder, parentResourceID *v2.ResourceId, session sessions.SessionStore) []*v2.Resource {
 	t.Helper()
 
 	var all []*v2.Resource
 	token := ""
 	for i := 0; i < 50; i++ {
-		resources, results, err := tb.List(context.Background(), parentResourceID, rs.SyncOpAttrs{PageToken: pagination.Token{Token: token}})
+		resources, results, err := tb.List(context.Background(), parentResourceID, rs.SyncOpAttrs{PageToken: pagination.Token{Token: token}, Session: session})
 		require.NoError(t, err)
 		all = append(all, resources...)
 
@@ -122,7 +181,7 @@ func TestTeammateBuilder_List_RootTeammates(t *testing.T) {
 	}
 
 	tb := newTeammateBuilder(client)
-	resources := drainTeammateList(t, tb, nil)
+	resources := drainTeammateList(t, tb, nil, nil)
 
 	require.Len(t, resources, 2)
 	for _, r := range resources {
@@ -153,11 +212,54 @@ func TestTeammateBuilder_List_SubuserTeammates(t *testing.T) {
 	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
 	require.NoError(t, err)
 
-	resources := drainTeammateList(t, tb, sub1ResourceID)
+	resources := drainTeammateList(t, tb, sub1ResourceID, nil)
 
 	require.Len(t, resources, 1, "global-admin must be deduped, only local-1 should be emitted")
 	require.Equal(t, "local-1", resources[0].Id.Resource)
 	require.NotNil(t, resources[0].ParentResourceId)
 	require.Equal(t, subuserResourceType.Id, resources[0].ParentResourceId.ResourceType)
 	require.Equal(t, "1", resources[0].ParentResourceId.Resource)
+}
+
+// TestTeammateBuilder_List_TeammateRestrictedToMultipleSubusers covers a
+// teammate whose subuser_access spans a group of Subusers (a documented
+// SendGrid feature — see GetTeammateSubuserAccess), rather than the parent
+// account or a single Subuser. Without dedup across subusers within the
+// sync, this teammate's username would be emitted once per subuser with the
+// same resource ID but a different ParentResourceId, producing conflicting
+// resources.
+func TestTeammateBuilder_List_TeammateRestrictedToMultipleSubusers(t *testing.T) {
+	client := &fakeSendGridClient{
+		subusers: []models.Subuser{
+			{Id: 1, Username: "sub1", Email: "sub1@example.com"},
+			{Id: 2, Username: "sub2", Email: "sub2@example.com"},
+		},
+		subuserTeammates: map[string][]*models.Teammate{
+			// restricted-1 is not a parent-scope teammate, but has access to
+			// both sub1 and sub2 (subuser_access lists more than one).
+			"sub1": {
+				{Username: "restricted-1", Email: "restricted-1@example.com"},
+			},
+			"sub2": {
+				{Username: "restricted-1", Email: "restricted-1@example.com"},
+			},
+		},
+	}
+
+	tb := newTeammateBuilder(client)
+	session := newFakeSessionStore()
+
+	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
+	require.NoError(t, err)
+	sub2ResourceID, err := rs.NewResourceID(subuserResourceType, 2)
+	require.NoError(t, err)
+
+	sub1Resources := drainTeammateList(t, tb, sub1ResourceID, session)
+	sub2Resources := drainTeammateList(t, tb, sub2ResourceID, session)
+
+	require.Len(t, sub1Resources, 1, "restricted-1 should be emitted under the first subuser encountered")
+	require.Equal(t, "restricted-1", sub1Resources[0].Id.Resource)
+	require.Equal(t, "1", sub1Resources[0].ParentResourceId.Resource)
+
+	require.Empty(t, sub2Resources, "restricted-1 must not be re-emitted under a second subuser with a conflicting ParentResourceId")
 }
