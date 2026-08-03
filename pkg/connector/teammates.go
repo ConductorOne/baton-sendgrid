@@ -22,9 +22,8 @@ import (
 const (
 	accessEntitlement = "access"
 
-	teammateAtParentScopeSessionKeyPrefix = "teammate_at_parent_scope:"
-	subuserUsernameSessionKeyPrefix       = "teammate_subuser_username:"
-	teammateEmittedSessionKeyPrefix       = "teammate_emitted_under_subuser:"
+	subuserUsernameSessionKeyPrefix = "teammate_subuser_username:"
+	teammateCoveredSessionKeyPrefix = "teammate_covered:"
 )
 
 type teammateBuilder struct {
@@ -154,76 +153,41 @@ func (u *teammateBuilder) getSubuserUsername(ctx context.Context, opts rs.SyncOp
 // shouldEmitTeammate decides whether a teammate discovered under a subuser
 // (via on-behalf-of) should be emitted as a resource for that subuser. It is
 // false when the teammate is already covered elsewhere in this sync: either
-// because it exists at parent scope (isParentScopeTeammate), or because it
-// was already emitted under an earlier subuser (markTeammateEmitted) — the
-// latter covers a teammate restricted to a group of Subusers rather than a
-// single one.
+// because it exists at parent scope (a global admin, visible under every
+// subuser), or because it was already emitted under an earlier subuser (a
+// teammate whose subuser_access spans a group of Subusers rather than a
+// single one).
 func (u *teammateBuilder) shouldEmitTeammate(ctx context.Context, opts rs.SyncOpAttrs, username string) (bool, error) {
-	existsAtParent, err := u.isParentScopeTeammate(ctx, opts, username)
-	if err != nil {
-		return false, err
-	}
-	if existsAtParent {
-		return false, nil
-	}
-
-	alreadyEmitted, err := u.markTeammateEmitted(ctx, opts, username)
-	if err != nil {
-		return false, err
-	}
-
-	return !alreadyEmitted, nil
-}
-
-// isParentScopeTeammate reports whether username already exists as a
-// parent-scope (global) teammate, used to dedupe sub-account-local teammates
-// discovered via on-behalf-of.
-func (u *teammateBuilder) isParentScopeTeammate(ctx context.Context, opts rs.SyncOpAttrs, username string) (bool, error) {
-	key := teammateAtParentScopeSessionKeyPrefix + username
+	key := teammateCoveredSessionKeyPrefix + username
 	if opts.Session != nil {
-		if raw, found, err := opts.Session.Get(ctx, key); err == nil && found {
-			return string(raw) == "1", nil
+		if _, found, err := opts.Session.Get(ctx, key); err == nil && found {
+			return false, nil
 		}
 	}
 
+	existsAtParent, err := u.isParentScopeTeammate(ctx, username)
+	if err != nil {
+		return false, err
+	}
+
+	if opts.Session != nil {
+		if err := opts.Session.Set(ctx, key, []byte("1")); err != nil {
+			return false, fmt.Errorf("baton-sendgrid: failed to record teammate coverage for %s: %w", username, err)
+		}
+	}
+
+	return !existsAtParent, nil
+}
+
+// isParentScopeTeammate reports whether username exists as a parent-scope
+// (global) teammate by checking the SendGrid API directly (no on-behalf-of).
+func (u *teammateBuilder) isParentScopeTeammate(ctx context.Context, username string) (bool, error) {
 	tm, err := u.client.GetSpecificTeammate(ctx, sgclient.Username(username), "")
 	if err != nil && status.Code(err) != codes.NotFound {
 		return false, fmt.Errorf("baton-sendgrid: failed to check parent-scope teammate %s: %w", username, err)
 	}
 
-	exists := tm != nil && tm.Username == username
-	if opts.Session != nil {
-		val := "0"
-		if exists {
-			val = "1"
-		}
-		_ = opts.Session.Set(ctx, key, []byte(val))
-	}
-
-	return exists, nil
-}
-
-// markTeammateEmitted records that username has been emitted as a
-// subuser-scoped teammate resource during this sync, returning true if it
-// was already recorded for an earlier subuser. This guards against a
-// teammate restricted to a group of Subusers being emitted once per subuser
-// with the same resource ID (username) but a different
-// ParentResourceId/subuser_username.
-func (u *teammateBuilder) markTeammateEmitted(ctx context.Context, opts rs.SyncOpAttrs, username string) (bool, error) {
-	if opts.Session == nil {
-		return false, nil
-	}
-
-	key := teammateEmittedSessionKeyPrefix + username
-	if _, found, err := opts.Session.Get(ctx, key); err == nil && found {
-		return true, nil
-	}
-
-	if err := opts.Session.Set(ctx, key, []byte("1")); err != nil {
-		return false, fmt.Errorf("baton-sendgrid: failed to record emitted teammate %s: %w", username, err)
-	}
-
-	return false, nil
+	return tm != nil && tm.Username == username, nil
 }
 
 func (u *teammateBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ rs.SyncOpAttrs) ([]*v2.Entitlement, *rs.SyncOpResults, error) {
