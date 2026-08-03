@@ -21,5 +21,6 @@ func main() {
 		config.Config,
 		connector.NewLambdaConnector,
 		connectorrunner.WithDefaultCapabilitiesConnectorBuilderV2(&connector.Connector{}),
+		connectorrunner.WithSessionStoreEnabled(),
 	)
 }

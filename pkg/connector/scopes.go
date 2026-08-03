@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 
+	sgclient "github.com/conductorone/baton-sendgrid/pkg/connector/client"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
@@ -71,7 +73,12 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 	scopeId := entitlement.Resource.Id.Resource
 	principalUsername := principal.Id.Resource
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	onBehalfOf, err := teammateOnBehalfOf(ctx, r.client, principal)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	teammate, onBehalfOf, err := getTeammateWithFreshOnBehalfOf(ctx, r.client, principal, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -91,7 +98,7 @@ func (r *scopeBuilder) Grant(ctx context.Context, principal *v2.Resource, entitl
 
 	teammate.Scopes = append(teammate.Scopes, scopeId)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, sgclient.Username(principalUsername), teammate.Scopes, teammate.IsAdmin, sgclient.OnBehalfOf(onBehalfOf))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +122,12 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 		return nil, fmt.Errorf("baton-sendgrid: principal resource type is not %s", teammateResourceType.Id)
 	}
 
-	teammate, err := r.client.GetSpecificTeammate(ctx, principalUsername)
+	onBehalfOf, err := teammateOnBehalfOf(ctx, r.client, principal)
+	if err != nil {
+		return nil, err
+	}
+
+	teammate, onBehalfOf, err := getTeammateWithFreshOnBehalfOf(ctx, r.client, principal, principalUsername, onBehalfOf)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +147,7 @@ func (r *scopeBuilder) Revoke(ctx context.Context, g *v2.Grant) (annotations.Ann
 
 	teammate.Scopes = append(teammate.Scopes[:index], teammate.Scopes[index+1:]...)
 
-	err = r.client.SetTeammateScopes(ctx, principalUsername, teammate.Scopes, teammate.IsAdmin)
+	err = r.client.SetTeammateScopes(ctx, sgclient.Username(principalUsername), teammate.Scopes, teammate.IsAdmin, sgclient.OnBehalfOf(onBehalfOf))
 	if err != nil {
 		return nil, err
 	}
