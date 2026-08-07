@@ -218,14 +218,20 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 		return nil, nil, err
 	}
 
-	// Subuser access grants.
+	logger := ctxzap.Extract(ctx)
+
+	// Subuser access grants. SendGrid returns 403 here for a teammate that
+	// only exists inside a subuser, by design, so treat it as "no access to
+	// report" rather than a fatal error.
 	access, nextToken, err := u.client.GetTeammatesSubAccess(ctx, sgclient.Username(username), &opts.PageToken, sgclient.OnBehalfOf(onBehalfOf))
 	if err != nil {
-		return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate subuser access for %s: %w", username, err)
+		if status.Code(err) == codes.PermissionDenied {
+			logger.Debug("baton-sendgrid: subuser_access forbidden for subuser-scoped teammate, skipping", zap.String("username", username), zap.Error(err))
+			access, nextToken = nil, ""
+		} else {
+			return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate subuser access for %s: %w", username, err)
+		}
 	}
-
-	logger := ctxzap.Extract(ctx)
-	logger.Info("Teammate grants", zap.String("username", username), zap.Any("COUNT", access))
 
 	for _, subAccess := range access {
 		grants, err := createGrantSubuserFromTeammate(resource, subAccess)

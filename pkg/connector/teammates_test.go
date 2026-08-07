@@ -83,6 +83,16 @@ type fakeSendGridClient struct {
 	subusers        []models.Subuser
 	// subuserTeammates maps subuser username -> teammates visible to it via on-behalf-of.
 	subuserTeammates map[string][]*models.Teammate
+
+	subAccess    []*models.TeammateSubuser
+	subAccessErr error
+}
+
+func (f *fakeSendGridClient) GetTeammatesSubAccess(_ context.Context, _ sgclient.Username, pToken *pagination.Token, _ sgclient.OnBehalfOf) ([]*models.TeammateSubuser, string, error) {
+	if f.subAccessErr != nil {
+		return nil, "", f.subAccessErr
+	}
+	return pageOneAtATime(f.subAccess, pToken)
 }
 
 func (f *fakeSendGridClient) GetTeammates(_ context.Context, pToken *pagination.Token, onBehalfOf sgclient.OnBehalfOf) ([]*models.Teammate, string, error) {
@@ -110,8 +120,13 @@ func (f *fakeSendGridClient) GetSubuserUsernameByID(_ context.Context, subuserID
 // GetSpecificTeammate backs isParentScopeTeammate's dedup check: onBehalfOf
 // "" means "does this username exist at parent scope", answered against
 // globalTeammates, mirroring the real API's 404-for-missing behavior.
-func (f *fakeSendGridClient) GetSpecificTeammate(_ context.Context, username sgclient.Username, _ sgclient.OnBehalfOf) (*models.TeammateScope, error) {
+func (f *fakeSendGridClient) GetSpecificTeammate(_ context.Context, username sgclient.Username, onBehalfOf sgclient.OnBehalfOf) (*models.TeammateScope, error) {
 	for _, tm := range f.globalTeammates {
+		if tm.Username == string(username) {
+			return &models.TeammateScope{Teammate: *tm}, nil
+		}
+	}
+	for _, tm := range f.subuserTeammates[string(onBehalfOf)] {
 		if tm.Username == string(username) {
 			return &models.TeammateScope{Teammate: *tm}, nil
 		}
@@ -262,4 +277,56 @@ func TestTeammateBuilder_List_TeammateRestrictedToMultipleSubusers(t *testing.T)
 	require.Equal(t, "1", sub1Resources[0].ParentResourceId.Resource)
 
 	require.Empty(t, sub2Resources, "restricted-1 must not be re-emitted under a second subuser with a conflicting ParentResourceId")
+}
+
+func TestTeammateBuilder_Grants_SubuserAccessForbidden(t *testing.T) {
+	client := &fakeSendGridClient{
+		subusers: []models.Subuser{
+			{Id: 1, Username: "sub1", Email: "sub1@example.com"},
+		},
+		subuserTeammates: map[string][]*models.Teammate{
+			"sub1": {
+				{Username: "local-1", Email: "local-1@example.com"},
+			},
+		},
+		subAccessErr: status.Error(codes.PermissionDenied, "403 Forbidden"),
+	}
+
+	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
+	require.NoError(t, err)
+
+	resource, err := teammateResource(&models.Teammate{Username: "local-1", Email: "local-1@example.com"}, sub1ResourceID, "sub1")
+	require.NoError(t, err)
+
+	tb := newTeammateBuilder(client)
+	grants, results, err := tb.Grants(context.Background(), resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
+
+	require.NoError(t, err, "a 403 from subuser_access must not abort Grants for a subuser-only teammate")
+	require.Empty(t, grants)
+	require.Equal(t, "", results.NextPageToken)
+}
+
+func TestTeammateBuilder_Grants_SubuserAccessOtherErrorPropagates(t *testing.T) {
+	client := &fakeSendGridClient{
+		subusers: []models.Subuser{
+			{Id: 1, Username: "sub1", Email: "sub1@example.com"},
+		},
+		subuserTeammates: map[string][]*models.Teammate{
+			"sub1": {
+				{Username: "local-1", Email: "local-1@example.com"},
+			},
+		},
+		subAccessErr: status.Error(codes.Unavailable, "upstream unavailable"),
+	}
+
+	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
+	require.NoError(t, err)
+
+	resource, err := teammateResource(&models.Teammate{Username: "local-1", Email: "local-1@example.com"}, sub1ResourceID, "sub1")
+	require.NoError(t, err)
+
+	tb := newTeammateBuilder(client)
+	_, _, err = tb.Grants(context.Background(), resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
+
+	require.Error(t, err, "only PermissionDenied should be tolerated, other errors must still propagate")
 }
