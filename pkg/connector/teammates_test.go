@@ -195,7 +195,7 @@ func TestTeammateBuilder_List_RootTeammates(t *testing.T) {
 		},
 	}
 
-	tb := newTeammateBuilder(client)
+	tb := newTeammateBuilder(client, false)
 	resources := drainTeammateList(t, tb, nil, nil)
 
 	require.Len(t, resources, 2)
@@ -222,7 +222,7 @@ func TestTeammateBuilder_List_SubuserTeammates(t *testing.T) {
 		},
 	}
 
-	tb := newTeammateBuilder(client)
+	tb := newTeammateBuilder(client, false)
 
 	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
 	require.NoError(t, err)
@@ -261,7 +261,7 @@ func TestTeammateBuilder_List_TeammateRestrictedToMultipleSubusers(t *testing.T)
 		},
 	}
 
-	tb := newTeammateBuilder(client)
+	tb := newTeammateBuilder(client, false)
 	session := newFakeSessionStore()
 
 	sub1ResourceID, err := rs.NewResourceID(subuserResourceType, 1)
@@ -298,7 +298,7 @@ func TestTeammateBuilder_Grants_SubuserAccessForbidden(t *testing.T) {
 	resource, err := teammateResource(&models.Teammate{Username: "local-1", Email: "local-1@example.com"}, sub1ResourceID, "sub1")
 	require.NoError(t, err)
 
-	tb := newTeammateBuilder(client)
+	tb := newTeammateBuilder(client, false)
 	grants, results, err := tb.Grants(context.Background(), resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
 
 	require.NoError(t, err, "a 403 from subuser_access must not abort Grants for a subuser-only teammate")
@@ -325,8 +325,43 @@ func TestTeammateBuilder_Grants_SubuserAccessOtherErrorPropagates(t *testing.T) 
 	resource, err := teammateResource(&models.Teammate{Username: "local-1", Email: "local-1@example.com"}, sub1ResourceID, "sub1")
 	require.NoError(t, err)
 
-	tb := newTeammateBuilder(client)
+	tb := newTeammateBuilder(client, false)
 	_, _, err = tb.Grants(context.Background(), resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
 
 	require.Error(t, err, "only PermissionDenied should be tolerated, other errors must still propagate")
+}
+
+// scopeCallRecorder records whether the scope lookup was attempted.
+type scopeCallRecorder struct {
+	fakeSendGridClient
+	called bool
+}
+
+func (f *scopeCallRecorder) GetSpecificTeammate(_ context.Context, _ sgclient.Username, _ sgclient.OnBehalfOf) (*models.TeammateScope, error) {
+	f.called = true
+	return &models.TeammateScope{Teammate: models.Teammate{Username: "u1"}, Scopes: []string{"mail.send"}}, nil
+}
+
+// Scope grants are cross-type. When scope is excluded from the sync filter the
+// connector must not even make the per-teammate scope lookup. Subuser grants
+// are unaffected: teammates own those.
+func TestTeammateBuilder_Grants_SkipScopeResourceType(t *testing.T) {
+	ctx := context.Background()
+	res, err := teammateResource(&models.Teammate{Username: "u1", Email: "u1@example.com"}, nil, "")
+	require.NoError(t, err)
+
+	filtered := &scopeCallRecorder{}
+	tb := newTeammateBuilder(filtered, true)
+	grants, _, err := tb.Grants(ctx, res, rs.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.False(t, filtered.called, "scope lookup must be skipped when scope is filtered out")
+	for _, g := range grants {
+		require.NotEqual(t, scopeResourceType.Id, g.GetEntitlement().GetResource().GetId().GetResourceType())
+	}
+
+	inScope := &scopeCallRecorder{}
+	tb = newTeammateBuilder(inScope, false)
+	_, _, err = tb.Grants(ctx, res, rs.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.True(t, inScope.called, "scope lookup must run when scope is in the sync filter")
 }

@@ -52,12 +52,16 @@ type SendGridClient interface {
 type Connector struct {
 	client         SendGridClient
 	ignoreSubusers bool
+	// skipScopeResourceType reports whether scope is excluded from the sync
+	// filter. Named for the skip condition so the zero value is safe: main.go
+	// registers a zero-value Connector{} as the capabilities factory.
+	skipScopeResourceType bool
 }
 
 // ResourceSyncers returns a ResourceSyncerV2 for each resource type that should be synced from the upstream service.
 func (d *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		newTeammateBuilder(d.client),
+		newTeammateBuilder(d.client, d.skipScopeResourceType),
 		newTeammateInvitationBuilder(d.client),
 		newScopeBuilder(d.client),
 		newSubuserBuilder(d.client, d.ignoreSubusers),
@@ -120,19 +124,20 @@ func (d *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 }
 
 // New returns a new instance of the connector.
-func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool) (*Connector, error) {
+func New(ctx context.Context, sgClient SendGridClient, ignoreSubusers bool, skipScopeResourceType bool) (*Connector, error) {
 	if sgClient == nil {
 		return nil, ErrSendgridClientNotProvided
 	}
 
 	return &Connector{
-		client:         sgClient,
-		ignoreSubusers: ignoreSubusers,
+		client:                sgClient,
+		ignoreSubusers:        ignoreSubusers,
+		skipScopeResourceType: skipScopeResourceType,
 	}, nil
 }
 
 // NewLambdaConnector creates a new connector from config for lambda/containerized deployment.
-func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
 	l := ctxzap.Extract(ctx)
 
 	sendGridApiKey := cfg.SendgridApiKey
@@ -161,7 +166,10 @@ func NewLambdaConnector(ctx context.Context, cfg *config.Sendgrid, _ *cli.Connec
 		return nil, nil, fmt.Errorf("baton-sendgrid: error creating client: %w", err)
 	}
 
-	cb, err := New(ctx, sendGridClient, sendgridIgnoreSubusers)
+	// nil opts means no filter, so nothing is skipped.
+	skipScopeResourceType := opts != nil && !opts.WillSyncResourceType(scopeResourceType.Id)
+
+	cb, err := New(ctx, sendGridClient, sendgridIgnoreSubusers, skipScopeResourceType)
 	if err != nil {
 		return nil, nil, fmt.Errorf("baton-sendgrid: error creating connector: %w", err)
 	}
