@@ -405,20 +405,14 @@ func getTokenValue(pToken *pagination.Token) (int, error) {
 	return value, nil
 }
 
-// onBehalfOfOpts builds the optional on-behalf-of header request option.
-// Returns nil (no extra options) when onBehalfOf is empty, so the same call
-// path works for parent-scope and subuser-scoped requests. WithNoCache is
-// required here: uhttp's cache key doesn't include on-behalf-of, so without
-// it every subuser would be served the parent (or another subuser's) cached
-// response for the same URL.
+// onBehalfOfOpts always disables caching: uhttp's cache key ignores the
+// on-behalf-of header, so parent- and subuser-scoped calls would otherwise collide.
 func onBehalfOfOpts(onBehalfOf OnBehalfOf) []uhttp.RequestOption {
-	if onBehalfOf == "" {
-		return nil
+	opts := []uhttp.RequestOption{uhttp.WithNoCache()}
+	if onBehalfOf != "" {
+		opts = append(opts, uhttp.WithHeader(OnBehalfOfHeaderName, string(onBehalfOf)))
 	}
-	return []uhttp.RequestOption{
-		uhttp.WithHeader(OnBehalfOfHeaderName, string(onBehalfOf)),
-		uhttp.WithNoCache(),
-	}
+	return opts
 }
 
 func (h *SendGridClient) doRequest(
