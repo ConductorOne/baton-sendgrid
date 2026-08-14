@@ -28,6 +28,11 @@ const (
 
 type teammateBuilder struct {
 	client SendGridClient
+	// skipScopeResourceType reports whether scope is excluded from the sync
+	// filter. Only the scope emission below is gated: teammates have their own
+	// entitlements and subuser grants, so the resource-type-level skip
+	// annotations would suppress real data and are deliberately not used here.
+	skipScopeResourceType bool
 }
 
 func (u *teammateBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -241,8 +246,9 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 		rv = append(rv, grants...)
 	}
 
-	// Scope grants — only on the first (and only) page to avoid duplicate API calls.
-	if opts.PageToken.Token == "" {
+	// Scope grants — only on the first (and only) page to avoid duplicate API
+	// calls, and only when scope is in the sync filter.
+	if opts.PageToken.Token == "" && !u.skipScopeResourceType {
 		specificTeammate, err := u.client.GetSpecificTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(onBehalfOf))
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate %s: %w", username, err)
@@ -293,9 +299,10 @@ func (u *teammateBuilder) Delete(ctx context.Context, resourceId *v2.ResourceId,
 	return nil, nil
 }
 
-func newTeammateBuilder(client SendGridClient) *teammateBuilder {
+func newTeammateBuilder(client SendGridClient, skipScopeResourceType bool) *teammateBuilder {
 	return &teammateBuilder{
-		client: client,
+		client:                client,
+		skipScopeResourceType: skipScopeResourceType,
 	}
 }
 
