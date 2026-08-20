@@ -92,7 +92,7 @@ func NewClient(ctx context.Context, baseUrl, apiKey string) (*SendGridClient, er
 		return nil, err
 	}
 
-	uhtppClient, err := uhttp.NewBaseHttpClientWithContext(ctx, httpClient)
+	uhtppClient, err := uhttp.NewBaseHttpClientWithContext(ctx, httpClient, uhttp.WithCacheKeyHeaders(OnBehalfOfHeaderName))
 	if err != nil {
 		return nil, err
 	}
@@ -405,14 +405,14 @@ func getTokenValue(pToken *pagination.Token) (int, error) {
 	return value, nil
 }
 
-// onBehalfOfOpts always disables caching: uhttp's cache key ignores the
-// on-behalf-of header, so parent- and subuser-scoped calls would otherwise collide.
+// onBehalfOfOpts scopes a request to a subuser when onBehalfOf is set. The
+// on-behalf-of header is folded into the cache key via WithCacheKeyHeaders on
+// the client, so parent- and subuser-scoped responses stay distinct in the cache.
 func onBehalfOfOpts(onBehalfOf OnBehalfOf) []uhttp.RequestOption {
-	opts := []uhttp.RequestOption{uhttp.WithNoCache()}
-	if onBehalfOf != "" {
-		opts = append(opts, uhttp.WithHeader(OnBehalfOfHeaderName, string(onBehalfOf)))
+	if onBehalfOf == "" {
+		return nil
 	}
-	return opts
+	return []uhttp.RequestOption{uhttp.WithHeader(OnBehalfOfHeaderName, string(onBehalfOf))}
 }
 
 func (h *SendGridClient) doRequest(
