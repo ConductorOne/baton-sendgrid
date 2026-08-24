@@ -140,8 +140,31 @@ func (h *SendGridClient) DeleteTeammate(ctx context.Context, username Username, 
 
 // GetSpecificTeammate Retrieve a specific teammate with scopes.
 // onBehalfOf, when non-empty, scopes the lookup to a subuser. Pass "" to look up
-// the teammate at parent scope.
+// the teammate at parent scope. The response is http-cached, so this is for
+// read-only callers (sync); reads whose result feeds a write must use
+// GetSpecificTeammateNoCache.
 func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username Username, onBehalfOf OnBehalfOf) (*models.TeammateScope, error) {
+	return h.getSpecificTeammate(ctx, username, onBehalfOf)
+}
+
+// GetSpecificTeammateNoCache is GetSpecificTeammate with the http cache
+// bypassed, for the read half of the read-modify-write in scope Grant/Revoke.
+// SetTeammateScopes replaces a teammate's entire scope list, so that read must
+// see the live list: uhttp caches GETs for an hour, never invalidates them on a
+// write, and only clears caches at end-of-sync — so a cached read would let
+// back-to-back provisioning tasks on the same teammate each build their new
+// scope list from a pre-write snapshot, silently dropping whatever the previous
+// task granted.
+func (h *SendGridClient) GetSpecificTeammateNoCache(ctx context.Context, username Username, onBehalfOf OnBehalfOf) (*models.TeammateScope, error) {
+	return h.getSpecificTeammate(ctx, username, onBehalfOf, uhttp.WithNoCache())
+}
+
+func (h *SendGridClient) getSpecificTeammate(
+	ctx context.Context,
+	username Username,
+	onBehalfOf OnBehalfOf,
+	extraOpts ...uhttp.RequestOption,
+) (*models.TeammateScope, error) {
 	uri := h.getUrl(fmt.Sprintf(SpecificTeammateEndpoint, username))
 	var requestResponse models.TeammateScope
 
@@ -151,7 +174,7 @@ func (h *SendGridClient) GetSpecificTeammate(ctx context.Context, username Usern
 		uri,
 		&requestResponse,
 		nil,
-		onBehalfOfOpts(onBehalfOf)...,
+		append(onBehalfOfOpts(onBehalfOf), extraOpts...)...,
 	)
 	if err != nil {
 		return nil, err

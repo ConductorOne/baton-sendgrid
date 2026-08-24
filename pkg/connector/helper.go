@@ -59,8 +59,13 @@ func teammateOnBehalfOf(ctx context.Context, client SendGridClient, resource *v2
 // time — not worth caching. Returns the teammate and the on-behalf-of value
 // that worked, so callers can reuse it for follow-up calls (e.g.
 // SetTeammateScopes).
+//
+// The teammate read itself deliberately bypasses the http cache: every caller
+// is a provisioning path that turns the returned Scopes into a full-list
+// SetTeammateScopes write, and a cached read would make consecutive tasks on
+// the same teammate overwrite each other's scopes.
 func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, principal *v2.Resource, username, onBehalfOf string) (*models.TeammateScope, string, error) {
-	teammate, err := client.GetSpecificTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(onBehalfOf))
+	teammate, err := client.GetSpecificTeammateNoCache(ctx, sgclient.Username(username), sgclient.OnBehalfOf(onBehalfOf))
 	if err == nil || onBehalfOf == "" || status.Code(err) != codes.NotFound {
 		return teammate, onBehalfOf, err
 	}
@@ -72,7 +77,7 @@ func getTeammateWithFreshOnBehalfOf(ctx context.Context, client SendGridClient, 
 		return nil, onBehalfOf, err
 	}
 
-	teammate, err = client.GetSpecificTeammate(ctx, sgclient.Username(username), sgclient.OnBehalfOf(freshOnBehalfOf))
+	teammate, err = client.GetSpecificTeammateNoCache(ctx, sgclient.Username(username), sgclient.OnBehalfOf(freshOnBehalfOf))
 	return teammate, freshOnBehalfOf, err
 }
 
