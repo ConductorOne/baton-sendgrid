@@ -3,7 +3,7 @@
   "info": {
     "title": "SendGrid v3 API (baton-sendgrid surface)",
     "version": "2026-09-22",
-    "description": "The subset of the SendGrid v3 API that baton-sendgrid calls. Scope is connector scope: twelve operations, and only the response fields the connector's structs declare. Each client method cites its twilio.com/docs/sendgrid reference page; those are the sources (accessed 2026-09-22)."
+    "description": "The subset of the SendGrid v3 API that baton-sendgrid calls. Scope is connector scope: twelve operations, and only the response fields the connector's structs declare. Each client method cites its twilio.com/docs/sendgrid reference page; those are the sources (accessed 2026-09-22). Success status codes and the user_type enum are taken from the same reference pages, per endpoint, rather than assumed uniform."
   },
   "servers": [
     {
@@ -68,6 +68,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -97,8 +100,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Invitation created.",
+          "201": {
+            "description": "Invitation created. Documented as 201 on the invite-teammate reference page.",
             "content": {
               "application/json": {
                 "schema": {
@@ -106,6 +109,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -157,6 +163,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -206,7 +215,10 @@
         },
         "responses": {
           "200": {
-            "description": "Permissions updated. The connector does not decode the body."
+            "description": "Permissions updated. Documented as 200, returning the updated teammate object; the connector does not decode it."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -246,8 +258,11 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Teammate deleted."
+          "204": {
+            "description": "Teammate deleted. Documented as 204; no body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -302,6 +317,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -334,8 +352,11 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Invitation withdrawn."
+          "204": {
+            "description": "Invitation withdrawn. Documented as 204; no body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -406,6 +427,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -463,6 +487,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -493,7 +520,10 @@
         },
         "responses": {
           "200": {
-            "description": "Subuser created. The connector does not decode the body."
+            "description": "Subuser created. Documented as 200 on the create-subuser reference page -- unlike the teammate invite, which is 201. The connector does not decode the body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -526,8 +556,11 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Subuser deleted."
+          "204": {
+            "description": "Subuser deleted. Documented as 204; no body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -578,8 +611,11 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Access updated."
+          "204": {
+            "description": "Access updated. Documented as 204; no body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -608,6 +644,16 @@
     "responses": {
       "Error": {
         "description": "Error, decoded into CustomErr by getError.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Bad request. doRequest special-cases this alongside 401/403/404 (client.go:484-496): it parses the fielded error body via getError and joins it to the gRPC status error, so the field-level detail reaches callers.",
         "content": {
           "application/json": {
             "schema": {
@@ -696,7 +742,13 @@
             "type": "string"
           },
           "user_type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "admin",
+              "owner",
+              "teammate"
+            ],
+            "description": "Documented enum on the update-permissions reference page."
           },
           "is_admin": {
             "type": "boolean",
@@ -714,19 +766,26 @@
         }
       },
       "TeammateScope": {
-        "type": "object",
-        "description": "A teammate's granted scopes. Scope strings are enumerated in pkg/connector/scopes_static.go, from twilio.com/docs/sendgrid/api-reference/api-key-permissions.",
-        "required": [
-          "scopes"
-        ],
-        "properties": {
-          "scopes": {
-            "type": "array",
-            "items": {
-              "type": "string"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Teammate"
+          },
+          {
+            "type": "object",
+            "required": [
+              "scopes"
+            ],
+            "properties": {
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           }
-        }
+        ],
+        "description": "A teammate plus their granted scopes. models.go TeammateScope embeds Teammate, and the connector reads the promoted fields: Username at teammates.go:201 and IsAdmin at scopes.go:101 and :150. Scope strings are enumerated in pkg/connector/scopes_static.go, from twilio.com/docs/sendgrid/api-reference/api-key-permissions."
       },
       "TeammateInvitation": {
         "type": "object",
@@ -817,7 +876,7 @@
       },
       "TeammateSubuserResponse": {
         "type": "object",
-        "description": "Keyset-paginated subuser access. next_params carries the cursor for the next page.",
+        "description": "Keyset-paginated subuser access. The cursor is nested: _metadata.next_params.after_subuser_id (models.go TeammateSubuserResponse.Metadata, read at client.go:254).",
         "required": [
           "subuser_access"
         ],
@@ -831,8 +890,14 @@
               "$ref": "#/components/schemas/TeammateSubuser"
             }
           },
-          "next_params": {
-            "$ref": "#/components/schemas/NextParams"
+          "_metadata": {
+            "type": "object",
+            "description": "Pagination wrapper. The connector advances while _metadata.next_params.after_subuser_id is non-zero.",
+            "properties": {
+              "next_params": {
+                "$ref": "#/components/schemas/NextParams"
+              }
+            }
           }
         }
       },
