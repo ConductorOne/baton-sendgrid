@@ -1,0 +1,954 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SendGrid v3 API (baton-sendgrid surface)",
+    "version": "2026-09-22",
+    "description": "The subset of the SendGrid v3 API that baton-sendgrid calls. Scope is connector scope: twelve operations, and only the response fields the connector's structs declare. Each client method cites its twilio.com/docs/sendgrid reference page; those are the sources (accessed 2026-09-22)."
+  },
+  "servers": [
+    {
+      "url": "https://api.sendgrid.com",
+      "description": "Global endpoint."
+    },
+    {
+      "url": "https://api.eu.sendgrid.com",
+      "description": "EU regional endpoint. Selected by connector config."
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v3/teammates": {
+      "get": {
+        "operationId": "listTeammates",
+        "summary": "List teammates",
+        "description": "client.go GetTeammates. Paginated by limit/offset; terminates on a short page. The response wraps the list in `result`.",
+        "parameters": [
+          {
+            "name": "on-behalf-of",
+            "in": "header",
+            "required": false,
+            "description": "Subuser impersonation. When set, the call is scoped to that sub-account. Registered with uhttp.WithCacheKeyHeaders, so cached responses do not leak between sub-accounts.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size. The connector always sends 500 (pageLimit).",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Row offset. The connector advances it by the number of rows returned and stops on a short page.",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeammateListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "inviteTeammate",
+        "summary": "Invite a teammate",
+        "description": "client.go InviteTeammate. Creates a pending invitation rather than a teammate; the invitee appears under /v3/teammates/pending until they accept.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteTeammateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Invitation created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeammateInvitation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/teammates/{username}": {
+      "get": {
+        "operationId": "getTeammate",
+        "summary": "Get a teammate's scopes",
+        "description": "client.go GetSpecificTeammate and GetSpecificTeammateNoCache. The cached and uncached variants hit the same operation; only the uhttp cache behavior differs. NOTE: this path is ambiguous with /v3/teammates/pending -- `pending` is a literal segment in SendGrid's API that also matches the {username} template. redocly flags it as no-ambiguous-paths. The ambiguity is SendGrid's, not this spec's; it is recorded rather than worked around.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "on-behalf-of",
+            "in": "header",
+            "required": false,
+            "description": "Subuser impersonation. When set, the call is scoped to that sub-account. Registered with uhttp.WithCacheKeyHeaders, so cached responses do not leak between sub-accounts.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeammateScope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateTeammatePermissions",
+        "summary": "Update a teammate's permissions",
+        "description": "client.go SetTeammateScopes. Grant and revoke both send the full desired scope set, not a delta. NOTE: this path is ambiguous with /v3/teammates/pending -- `pending` is a literal segment in SendGrid's API that also matches the {username} template. redocly flags it as no-ambiguous-paths. The ambiguity is SendGrid's, not this spec's; it is recorded rather than worked around.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "on-behalf-of",
+            "in": "header",
+            "required": false,
+            "description": "Subuser impersonation. When set, the call is scoped to that sub-account. Registered with uhttp.WithCacheKeyHeaders, so cached responses do not leak between sub-accounts.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTeammateScopesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permissions updated. The connector does not decode the body."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTeammate",
+        "summary": "Delete a teammate",
+        "description": "client.go DeleteTeammate. NOTE: this path is ambiguous with /v3/teammates/pending -- `pending` is a literal segment in SendGrid's API that also matches the {username} template. redocly flags it as no-ambiguous-paths. The ambiguity is SendGrid's, not this spec's; it is recorded rather than worked around.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "on-behalf-of",
+            "in": "header",
+            "required": false,
+            "description": "Subuser impersonation. When set, the call is scoped to that sub-account. Registered with uhttp.WithCacheKeyHeaders, so cached responses do not leak between sub-accounts.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Teammate deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/teammates/pending": {
+      "get": {
+        "operationId": "listPendingTeammates",
+        "summary": "List pending teammates",
+        "description": "client.go GetPendingTeammates. Paginated by limit/offset. Pending invitations are a separate resource from teammates.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size. The connector always sends 500 (pageLimit).",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Row offset. The connector advances it by the number of rows returned and stops on a short page.",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingTeammateListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/teammates/pending/{token}": {
+      "delete": {
+        "operationId": "deletePendingTeammate",
+        "summary": "Delete a pending teammate",
+        "description": "client.go DeletePendingTeammate. Addressed by the invitation token from listPendingTeammates, not by username or email.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "Invitation token from listPendingTeammates.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation withdrawn."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/teammates/{username}/subuser_access": {
+      "get": {
+        "operationId": "listTeammateSubuserAccess",
+        "summary": "List a teammate's subuser access",
+        "description": "client.go GetTeammatesSubAccess. Paginated differently from every other list here: keyset by after_subuser_id, with the next value supplied in the response as next_params.after_subuser_id.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "on-behalf-of",
+            "in": "header",
+            "required": false,
+            "description": "Subuser impersonation. When set, the call is scoped to that sub-account. Registered with uhttp.WithCacheKeyHeaders, so cached responses do not leak between sub-accounts.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size. The connector always sends 500 (pageLimit).",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          },
+          {
+            "name": "after_subuser_id",
+            "in": "query",
+            "required": false,
+            "description": "Keyset cursor from the previous response's next_params.after_subuser_id. Omitted on the first page.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeammateSubuserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/subusers": {
+      "get": {
+        "operationId": "listSubusers",
+        "summary": "List subusers",
+        "description": "client.go GetSubusers. Paginated by limit/offset. Also walked in full by GetSubuserUsernameByID, which resolves a numeric subuser id to a username because no by-id lookup exists.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size. The connector always sends 500 (pageLimit).",
+            "schema": {
+              "type": "integer",
+              "default": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Row offset. The connector advances it by the number of rows returned and stops on a short page.",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subuser"
+                  },
+                  "description": "Bare array, not an envelope."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSubuser",
+        "summary": "Create a subuser",
+        "description": "client.go CreateSubuser. Used for account provisioning.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubuserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Subuser created. The connector does not decode the body."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/subusers/{username}": {
+      "delete": {
+        "operationId": "deleteSubuser",
+        "summary": "Delete a subuser",
+        "description": "client.go DeleteSubuser. Addressed by username; callers holding only an id must resolve it via listSubusers first.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subuser deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v3/subusers/{username}/website_access": {
+      "patch": {
+        "operationId": "setSubuserWebsiteAccess",
+        "summary": "Enable or disable a subuser",
+        "description": "client.go SetSubuserDisabled. SendGrid has no delete-vs-disable distinction here; this toggles website access.",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "disabled"
+                ],
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Access updated."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SendGrid API key."
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error, decoded into CustomErr by getError.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "TeammateListResponse": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "description": "Teammates list envelope.",
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Teammate"
+            }
+          }
+        }
+      },
+      "PendingTeammateListResponse": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "description": "Pending invitations envelope.",
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeammateInvitation"
+            }
+          }
+        }
+      },
+      "Teammate": {
+        "type": "object",
+        "description": "All fields baton-sendgrid decodes. username is the user resource ID.",
+        "required": [
+          "username",
+          "email"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "address2": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "zip": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "user_type": {
+            "type": "string"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "description": "Admin teammates hold every scope implicitly."
+          },
+          "is_sso": {
+            "type": "boolean"
+          },
+          "is_unified": {
+            "type": "boolean"
+          },
+          "is_partner_sso": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TeammateScope": {
+        "type": "object",
+        "description": "A teammate's granted scopes. Scope strings are enumerated in pkg/connector/scopes_static.go, from twilio.com/docs/sendgrid/api-reference/api-key-permissions.",
+        "required": [
+          "scopes"
+        ],
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TeammateInvitation": {
+        "type": "object",
+        "description": "A pending invitation. token is the identifier used to withdraw it.",
+        "required": [
+          "email",
+          "token"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "token": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "expiration_date": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp."
+          }
+        }
+      },
+      "Subuser": {
+        "type": "object",
+        "description": "A sub-account. id is numeric while every subuser path parameter is the username, which is why GetSubuserUsernameByID exists.",
+        "required": [
+          "id",
+          "username",
+          "email"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "disabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TeammateSubuser": {
+        "type": "object",
+        "description": "A subuser a teammate can reach, with the permission level held there.",
+        "required": [
+          "id",
+          "username"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "permission_type": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TeammateSubuserResponse": {
+        "type": "object",
+        "description": "Keyset-paginated subuser access. next_params carries the cursor for the next page.",
+        "required": [
+          "subuser_access"
+        ],
+        "properties": {
+          "has_restricted_subuser_access": {
+            "type": "boolean"
+          },
+          "subuser_access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeammateSubuser"
+            }
+          },
+          "next_params": {
+            "$ref": "#/components/schemas/NextParams"
+          }
+        }
+      },
+      "NextParams": {
+        "type": "object",
+        "description": "Cursor for the next subuser_access page. The connector advances while after_subuser_id is non-zero.",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          },
+          "after_subuser_id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "InviteTeammateRequest": {
+        "type": "object",
+        "required": [
+          "email",
+          "scopes",
+          "is_admin"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Must be empty when is_admin is true."
+          },
+          "is_admin": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateTeammateScopesRequest": {
+        "type": "object",
+        "required": [
+          "scopes",
+          "is_admin"
+        ],
+        "description": "Full desired scope set, not a delta.",
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_admin": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SubuserCreate": {
+        "type": "object",
+        "required": [
+          "username",
+          "email",
+          "password",
+          "ips"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          },
+          "ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "IPs assigned to the subuser."
+          },
+          "region": {
+            "type": "string"
+          },
+          "include_region": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "description": "SendGrid's error envelope, decoded by pkg/connector/client/client.go getError into CustomErr.",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
