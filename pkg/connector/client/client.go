@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
@@ -45,6 +46,8 @@ var (
 	SubusersEndpoint              = "v3/subusers"
 	SpecificSubusersEndpoint      = "v3/subusers/%s"
 	SubusersWebsiteAccessEndpoint = "v3/subusers/%s/website_access"
+
+	ScopesEndpoint = "v3/scopes"
 )
 
 type CustomErrField struct {
@@ -53,20 +56,29 @@ type CustomErrField struct {
 }
 
 func (c CustomErrField) Error() string {
-	return fmt.Sprintf("field: %s.json, message: %s.json", c.Field, c.Message)
+	return fmt.Sprintf("field: %s, message: %s", c.Field, c.Message)
 }
 
+// CustomErr binds both vendor error envelope shapes observed on the SendGrid
+// API: the fielded {"errors":[...]} array and the flat {"message": "..."} —
+// so neither variant's detail is silently dropped.
 type CustomErr struct {
-	Errors []CustomErrField `json:"errors"`
+	Message string           `json:"message"` // flat envelope: {"message": "..."}
+	Errors  []CustomErrField `json:"errors"`
 }
 
-func (c CustomErr) Error() error {
-	errorsResult := make([]error, len(c.Errors))
-	for i, err := range c.Errors {
-		errorsResult[i] = err
+// Error renders the vendor detail as one line: the flat message first (when
+// present), then each fielded entry. A CustomErr with neither set renders ""
+// — the doRequest caller only joins non-empty strings.
+func (c CustomErr) Error() string {
+	msgs := make([]string, 0, len(c.Errors)+1)
+	if c.Message != "" {
+		msgs = append(msgs, c.Message)
 	}
-
-	return errors.Join(errorsResult...)
+	for _, e := range c.Errors {
+		msgs = append(msgs, e.Error())
+	}
+	return strings.Join(msgs, "; ")
 }
 
 // SendGridClient is a client for the SendGrid API.
@@ -282,6 +294,20 @@ func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagina
 	return response.Result, nextTokenPage(offset, len(response.Result)), nil
 }
 
+// GetScopes returns the permission scopes assigned to the authenticating API
+// key. The vendor shape is a single page {"scopes": [string]} with no
+// pagination token (verified against the Twilio SendGrid docs), so no token
+// is returned.
+// https://www.twilio.com/docs/sendgrid/api-reference/api-keys/retrieve-all-scopes-assigned-to-an-api-key
+func (h *SendGridClient) GetScopes(ctx context.Context) ([]string, error) {
+	var res models.ScopesResponse
+	err := h.doRequest(ctx, http.MethodGet, h.getUrl(ScopesEndpoint), &res, nil)
+	if err != nil {
+		return nil, fmt.Errorf("baton-sendgrid: failed to get scopes: %w", err)
+	}
+	return res.Scopes, nil
+}
+
 // DeletePendingTeammate Delete a pending teammate invitation.
 // https://www.twilio.com/docs/sendgrid/api-reference/teammates/delete-pending-teammate
 func (h *SendGridClient) DeletePendingTeammate(ctx context.Context, token string) error {
@@ -395,21 +421,6 @@ func (h *SendGridClient) getUrl(endPoint string) *url.URL {
 	return h.baseUrl.JoinPath(endPoint)
 }
 
-func getError(resp *http.Response) (CustomErr, error) {
-	bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return CustomErr{}, err
-	}
-
-	var cErr CustomErr
-	err = json.Unmarshal(bytes, &cErr)
-	if err != nil {
-		return cErr, err
-	}
-
-	return cErr, nil
-}
-
 func nextTokenPage(offset, count int) string {
 	return strconv.Itoa(offset + count)
 }
@@ -467,41 +478,55 @@ func (h *SendGridClient) doRequest(
 		return err
 	}
 
-	// Build request options
-	doOptions := []uhttp.DoOption{}
-	// If the response target is not nil, unmarshal the response into it
-	if res != nil {
-		doOptions = append(doOptions, uhttp.WithResponse(&res))
-	}
-
-	resp, err = h.httpClient.Do(req, doOptions...)
+	resp, err = h.httpClient.Do(req)
 	if resp != nil {
 		defer resp.Body.Close()
 	}
 
-	if resp != nil {
-		switch resp.StatusCode {
-		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusBadRequest:
-			// err here already carries the right gRPC status code for this
-			// HTTP status (uhttp.BaseHttpClient.Do wraps it automatically via
-			// GrpcCodeFromHTTPStatus) — join it with the response body's
-			// field-level detail rather than replacing it, so callers can
-			// keep checking status.Code(err). errors.Join ignores nil
-			// arguments, so this is safe even when the body has no fielded
-			// errors or fails to parse.
-			cErr, parseErr := getError(resp)
-			if parseErr != nil {
-				return err
+	if resp == nil {
+		return err
+	}
+
+	// Read the body exactly once. uhttp.BaseHttpClient.Do already drains the
+	// body and re-buffers it into a re-readable NopCloser before returning,
+	// so a single ReadAll here is safe on every status (probed:
+	// baton-sdk v0.42.7 pkg/uhttp/wrapper.go:747-844). No DoOption is passed
+	// to Do: WithResponse would decode the body into res on EVERY status,
+	// including error statuses, and its decode failure on a non-2xx is
+	// stripped by withoutDecodeErrors — both of which AC5 forbids.
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return errors.Join(err, fmt.Errorf("baton-sendgrid: reading response body: %w", readErr))
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if res != nil && len(respBody) > 0 {
+			if unmarshalErr := json.Unmarshal(respBody, res); unmarshalErr != nil {
+				// A 2xx with an undecodable body is a wrapped error, never a
+				// silent empty result.
+				return errors.Join(err, fmt.Errorf("baton-sendgrid: decoding response into %T: %w", res, unmarshalErr))
 			}
-			return errors.Join(err, cErr.Error())
 		}
-
-		return err
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
-	if err != nil {
-		return err
+	// Pinned truth (probed against baton-sdk v0.42.7, pkg/uhttp/wrapper.go
+	// GrpcCodeFromHTTPStatus, lines 502-529): 429, 502, 503 and 504 map to
+	// codes.Unavailable (lines 508-509), and every other 5xx maps to
+	// codes.Unavailable via the 500-599 range (lines 522-523). The uhttp
+	// error carried in err already carries the right gRPC code for this HTTP
+	// status — JOIN the vendor body's detail onto it, never replace it, so
+	// callers can keep checking status.Code(err).
+	var cErr CustomErr
+	// An unparseable error body is tolerated: we fail open on DETAIL, never
+	// on the error itself.
+	_ = json.Unmarshal(respBody, &cErr)
+	errOut := err
+	if s := cErr.Error(); s != "" {
+		errOut = errors.Join(err, fmt.Errorf("baton-sendgrid: %s", s))
 	}
-
-	return nil
+	return errOut
 }
