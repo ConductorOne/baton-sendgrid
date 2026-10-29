@@ -10,7 +10,6 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
@@ -492,7 +491,7 @@ func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
 	// it. Per-grant annotations are inert for insertion and would leave the
 	// scope resource dangling (ingest invariant I3, ingest_invariants.go:1113).
 	require.NotNil(t, results)
-	respAnnos := annotations.Annotations(results.Annotations)
+	respAnnos := results.Annotations
 	require.True(t, respAnnos.Contains(&v2.InsertResourceGrants{}),
 		"Grants response must carry InsertResourceGrants so grant-discovered scope resources are inserted")
 
