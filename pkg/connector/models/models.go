@@ -30,6 +30,10 @@ type TeammateScope struct {
 	Scopes []string `json:"scopes"`
 }
 
+type ScopesResponse struct {
+	Scopes []string `json:"scopes"`
+}
+
 type PaginationData struct {
 	Limit          string `json:"limit"`
 	AfterSubuserId string `json:"after_subuser_id"`

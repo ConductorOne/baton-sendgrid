@@ -254,9 +254,10 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 			return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate %s: %w", username, err)
 		}
 
+		var excluded []string
 		for _, scope := range specificTeammate.Scopes {
-			if _, ok := SendGridScopes[Scope(scope)]; !ok {
-				logger.Debug("baton-sendgrid: skipping unknown scope", zap.String("scope", scope))
+			if isTeammateNonGrantScope(Scope(scope)) {
+				excluded = append(excluded, scope)
 				continue
 			}
 			scopeRs, err := scopeResource(Scope(scope))
@@ -265,6 +266,18 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 			}
 			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
 		}
+		if len(excluded) > 0 {
+			logger.Debug("baton-sendgrid: excluding non-grantable scopes per teammateNonGrantScopes rule (CXH-2196)", zap.Strings("scopes", excluded))
+		}
+
+		// InsertResourceGrants must be a RESPONSE-level annotation: the syncer
+		// only checks resp.GetAnnotations() (baton-sdk pkg/sync/syncer.go:2687),
+		// and a grant-discovered resource is inserted only when the response
+		// carries it. Per-grant annotations are inert for insertion and leave
+		// the scope resource dangling (ingest invariant I3 fails on the Pebble
+		// engine, syncer.go:4091).
+		respAnnos := annotations.New(&v2.InsertResourceGrants{})
+		return rv, &rs.SyncOpResults{NextPageToken: nextToken, Annotations: respAnnos}, nil
 	}
 
 	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil

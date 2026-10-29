@@ -42,6 +42,7 @@ type SendGridClient interface {
 	DeleteTeammate(ctx context.Context, username client.Username, onBehalfOf client.OnBehalfOf) error
 	GetTeammatesSubAccess(ctx context.Context, username client.Username, pToken *pagination.Token, onBehalfOf client.OnBehalfOf) ([]*models.TeammateSubuser, string, error)
 	GetPendingTeammates(ctx context.Context, pToken *pagination.Token) ([]*models.TeammateInvitation, string, error)
+	GetScopes(ctx context.Context) ([]string, error)
 	DeletePendingTeammate(ctx context.Context, token string) error
 	SetTeammateScopes(ctx context.Context, username client.Username, scopes []string, isAdmin bool, onBehalfOf client.OnBehalfOf) error
 

@@ -1,10 +1,19 @@
 package connector
 
+import (
+	"strings"
+)
+
 type Scope string
 
-// SendGridScopes is the set of known scopes for SendGrid.
-// Sendgrid does not provide an api to list scopes, so this list is manually
-// maintained from https://www.twilio.com/docs/sendgrid/api-reference/api-key-permissions
+// SendGridScopes is the additive compatibility floor for the scope resource
+// catalog. GET /v3/scopes returns only the scopes assigned to the
+// authenticating key, so on a restricted key a live-only catalog would
+// mass-remove today's resources (forbidden: BUGBOT B-series). billing.* is
+// granted on teammates yet absent from GET /v3/scopes, so no fixed list may
+// govern grant emission (CXH-2196): this floor only guarantees the catalog
+// never shrinks. scopeBuilder.List emits the sorted union of this floor with
+// the live GET /v3/scopes response.
 var SendGridScopes = map[Scope]struct{}{
 	"access_settings.activity.read":             {},
 	"access_settings.whitelist.create":          {},
@@ -203,4 +212,31 @@ var SendGridScopes = map[Scope]struct{}{
 	"whitelabel.delete":                         {},
 	"whitelabel.read":                           {},
 	"whitelabel.update":                         {},
+}
+
+// teammateNonGrantScopes and teammateNonGrantPrefixes are account/UI state
+// flags SendGrid reports in a teammate's scopes array that are not grantable
+// permissions. CXH-2196 AC2: excluding them is an explicit documented rule,
+// not a silent fallthrough. Every other string — including scopes absent
+// from both this floor and GET /v3/scopes — is emitted as a grant.
+var teammateNonGrantScopes = map[Scope]struct{}{
+	"2fa_exempt":                   {},
+	"2fa_required":                 {},
+	"sender_verification_eligible": {},
+	"sender_verification_legacy":   {},
+	"signup.trigger_confirmation":  {},
+}
+
+var teammateNonGrantPrefixes = []string{"ui."}
+
+func isTeammateNonGrantScope(scope Scope) bool {
+	if _, ok := teammateNonGrantScopes[scope]; ok {
+		return true
+	}
+	for _, prefix := range teammateNonGrantPrefixes {
+		if strings.HasPrefix(string(scope), prefix) {
+			return true
+		}
+	}
+	return false
 }
