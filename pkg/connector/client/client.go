@@ -298,7 +298,7 @@ func (h *SendGridClient) GetPendingTeammates(ctx context.Context, pToken *pagina
 // key. The vendor shape is a single page {"scopes": [string]} with no
 // pagination token (verified against the Twilio SendGrid docs), so no token
 // is returned.
-// https://www.twilio.com/docs/sendgrid/api-reference/api-keys/retrieve-all-scopes-assigned-to-an-api-key
+// https://www.twilio.com/docs/sendgrid/api-reference/api-key-permissions/retrieve-a-list-of-scopes-for-which-this-user-has-access
 func (h *SendGridClient) GetScopes(ctx context.Context) ([]string, error) {
 	var res models.ScopesResponse
 	err := h.doRequest(ctx, http.MethodGet, h.getUrl(ScopesEndpoint), &res, nil)
