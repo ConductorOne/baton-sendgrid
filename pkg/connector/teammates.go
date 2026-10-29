@@ -254,9 +254,10 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 			return nil, nil, fmt.Errorf("baton-sendgrid: failed to get teammate %s: %w", username, err)
 		}
 
+		var excluded []string
 		for _, scope := range specificTeammate.Scopes {
-			if _, ok := SendGridScopes[Scope(scope)]; !ok {
-				logger.Debug("baton-sendgrid: skipping unknown scope", zap.String("scope", scope))
+			if isTeammateNonGrantScope(Scope(scope)) {
+				excluded = append(excluded, scope)
 				continue
 			}
 			scopeRs, err := scopeResource(Scope(scope))
@@ -264,6 +265,9 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 				return nil, nil, err
 			}
 			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
+		}
+		if len(excluded) > 0 {
+			logger.Debug("baton-sendgrid: excluding non-grantable scopes per teammateNonGrantScopes rule (CXH-2196)", zap.Strings("scopes", excluded))
 		}
 	}
 

@@ -13,7 +13,10 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -86,6 +89,24 @@ type fakeSendGridClient struct {
 
 	subAccess    []*models.TeammateSubuser
 	subAccessErr error
+
+	// scopes/scopesErr drive GetScopes (the v3/scopes catalog fetch).
+	scopes    []string
+	scopesErr error
+
+	// teammateScopes/teammateScopesErr drive GetSpecificTeammate's scope
+	// payload; when teammateScopes is nil the pre-existing
+	// lookup-globalTeammates behavior applies.
+	teammateScopes    []string
+	teammateScopesErr error
+}
+
+// GetScopes backs scopeBuilder.List's catalog fetch.
+func (f *fakeSendGridClient) GetScopes(_ context.Context) ([]string, error) {
+	if f.scopesErr != nil {
+		return nil, f.scopesErr
+	}
+	return f.scopes, nil
 }
 
 func (f *fakeSendGridClient) GetTeammatesSubAccess(_ context.Context, _ sgclient.Username, pToken *pagination.Token, _ sgclient.OnBehalfOf) ([]*models.TeammateSubuser, string, error) {
@@ -120,7 +141,20 @@ func (f *fakeSendGridClient) GetSubuserUsernameByID(_ context.Context, subuserID
 // GetSpecificTeammate backs isParentScopeTeammate's dedup check: onBehalfOf
 // "" means "does this username exist at parent scope", answered against
 // globalTeammates, mirroring the real API's 404-for-missing behavior.
+// teammateScopes, when non-nil, overrides the scope payload (and the username
+// is echoed from the request); teammateScopesErr short-circuits with the
+// error. When both are unset the original lookup behavior applies so the
+// existing List tests' fixtures keep working.
 func (f *fakeSendGridClient) GetSpecificTeammate(_ context.Context, username sgclient.Username, onBehalfOf sgclient.OnBehalfOf) (*models.TeammateScope, error) {
+	if f.teammateScopesErr != nil {
+		return nil, f.teammateScopesErr
+	}
+	if f.teammateScopes != nil {
+		return &models.TeammateScope{
+			Teammate: models.Teammate{Username: string(username)},
+			Scopes:   f.teammateScopes,
+		}, nil
+	}
 	for _, tm := range f.globalTeammates {
 		if tm.Username == string(username) {
 			return &models.TeammateScope{Teammate: *tm}, nil
@@ -364,4 +398,141 @@ func TestTeammateBuilder_Grants_SkipScopeResourceType(t *testing.T) {
 	_, _, err = tb.Grants(ctx, res, rs.SyncOpAttrs{})
 	require.NoError(t, err)
 	require.True(t, inScope.called, "scope lookup must run when scope is in the sync filter")
+}
+
+// logCapture is a minimal in-memory zapcore.Core recording every entry with
+// its fields, so tests can assert on the Debug logs the builder emits
+// (zaptest/observer is not vendored in this repo).
+type logEntry struct {
+	message string
+	fields  *zapcore.MapObjectEncoder
+}
+
+type logCapture struct {
+	zapcore.LevelEnabler
+	entries []logEntry
+}
+
+func (c *logCapture) Enabled(_ zapcore.Level) bool { return true }
+func (c *logCapture) With(_ []zapcore.Field) zapcore.Core {
+	return c
+}
+func (c *logCapture) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	return ce.AddCore(ent, c)
+}
+func (c *logCapture) Write(ent zapcore.Entry, fields []zapcore.Field) error {
+	m := zapcore.NewMapObjectEncoder()
+	for _, f := range fields {
+		f.AddTo(m)
+	}
+	c.entries = append(c.entries, logEntry{message: ent.Message, fields: m})
+	return nil
+}
+func (c *logCapture) Sync() error { return nil }
+
+// TestTeammateBuilder_Grants_EmitsEveryReportedScope proves every scope
+// string SendGrid reports on a teammate yields a grant — including the
+// documented dropped families and billing.create, which is absent from BOTH
+// the compatibility floor and the fixture's live v3/scopes list (AC1/AC7,
+// I1). The old catalog-gate skip line must never fire again.
+func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
+	logs := &logCapture{LevelEnabler: zapcore.DebugLevel}
+	ctx := ctxzap.ToContext(context.Background(), zap.New(logs))
+
+	reported := []string{
+		"sso.settings.read", "sso.settings.update",
+		"teammates.read", "teammates.update",
+		"mail_settings.read",
+		"asm.groups.suppressions.read",
+		"tracking_settings.read",
+		"user.profile",
+		"design_library.read",
+		"partner_settings.read",
+		"ips.read",
+		"email_testing",
+		"marketing.read",
+		"recipients.erasejob.read",
+		"messages.read",
+		"billing.create",
+	}
+	client := &fakeSendGridClient{
+		teammateScopes: reported,
+		// Deliberately narrow live catalog: none of the reported scopes above
+		// is required to be in it — grant emission is gated by nothing.
+		scopes: []string{"alerts.read", "mail.send"},
+	}
+
+	resource, err := teammateResource(&models.Teammate{Username: "audited-admin", Email: "audited-admin@example.com"}, nil, "")
+	require.NoError(t, err)
+
+	tb := newTeammateBuilder(client, false)
+	grants, _, err := tb.Grants(ctx, resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
+	require.NoError(t, err)
+
+	require.Len(t, grants, len(reported), "one grant per reported scope")
+
+	emitted := make(map[string]struct{}, len(grants))
+	for _, g := range grants {
+		scopeID := g.GetEntitlement().GetResource().GetId().GetResource()
+		emitted[scopeID] = struct{}{}
+		require.Equal(t, scopeResourceType.Id, g.GetEntitlement().GetResource().GetId().GetResourceType())
+	}
+	for _, scope := range reported {
+		require.Contains(t, emitted, scope, "scope %s must be emitted as a grant", scope)
+	}
+	require.Contains(t, emitted, "email_testing", "scope absent from both the floor and the live list must still be emitted (AC1)")
+
+	for _, e := range logs.entries {
+		require.NotEqual(t, "baton-sendgrid: skipping unknown scope", e.message, "the old drop path must never fire (AC7)")
+	}
+}
+
+// TestTeammateBuilder_Grants_ExcludesPseudoFlags proves the only
+// non-emission path is the explicit, documented pseudo-flag rule, logged once
+// per teammate at Debug with the rule name (AC2, L1/L4).
+func TestTeammateBuilder_Grants_ExcludesPseudoFlags(t *testing.T) {
+	logs := &logCapture{LevelEnabler: zapcore.DebugLevel}
+	ctx := ctxzap.ToContext(context.Background(), zap.New(logs))
+
+	client := &fakeSendGridClient{
+		teammateScopes: []string{
+			"2fa_exempt",
+			"2fa_required",
+			"sender_verification_eligible",
+			"signup.trigger_confirmation",
+			"ui.read",
+			"mail.send",
+		},
+	}
+
+	resource, err := teammateResource(&models.Teammate{Username: "flagged", Email: "flagged@example.com"}, nil, "")
+	require.NoError(t, err)
+
+	tb := newTeammateBuilder(client, false)
+	grants, _, err := tb.Grants(ctx, resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
+	require.NoError(t, err)
+
+	require.Len(t, grants, 1, "exactly one grantable scope in the fixture")
+	require.Equal(t, "mail.send", grants[0].GetEntitlement().GetResource().GetId().GetResource())
+
+	const exclusionMsg = "baton-sendgrid: excluding non-grantable scopes per teammateNonGrantScopes rule (CXH-2196)"
+	var exclusionEntries []logEntry
+	for _, e := range logs.entries {
+		if e.message == exclusionMsg {
+			exclusionEntries = append(exclusionEntries, e)
+		}
+	}
+	require.Len(t, exclusionEntries, 1, "exactly one exclusion Debug line per teammate")
+
+	raw, ok := exclusionEntries[0].fields.Fields["scopes"].([]interface{})
+	require.True(t, ok, "exclusion log must carry the scopes field, got %v", exclusionEntries[0].fields.Fields)
+	scopes := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		require.True(t, ok, "scopes entries must be strings, got %v", v)
+		scopes = append(scopes, s)
+	}
+	require.Equal(t,
+		[]string{"2fa_exempt", "2fa_required", "sender_verification_eligible", "signup.trigger_confirmation", "ui.read"},
+		scopes)
 }
