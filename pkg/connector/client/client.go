@@ -500,12 +500,20 @@ func (h *SendGridClient) doRequest(
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if res != nil && len(respBody) > 0 {
-			if unmarshalErr := json.Unmarshal(respBody, res); unmarshalErr != nil {
-				// A 2xx with an undecodable body is a wrapped error, never a
-				// silent empty result.
-				return errors.Join(err, fmt.Errorf("baton-sendgrid: decoding response into %T: %w", res, unmarshalErr))
-			}
+		if res != nil && len(respBody) == 0 {
+			// Behavior restoration, not a new failure mode: the replaced
+			// uhttp.WithJSONResponse path (baton-sdk v0.42.7
+			// pkg/uhttp/wrapper.go:228-243) json.Unmarshals the body whenever
+			// the decode target is non-nil, so an EMPTY body errored loudly
+			// ("unexpected end of JSON input"). Skipping decode would zero
+			// out GetSpecificTeammate/GetTeammates/GetScopes and let C1
+			// bucket real grants as deleted.
+			return errors.Join(err, errors.New("baton-sendgrid: empty response body where JSON was expected"))
+		}
+		if unmarshalErr := json.Unmarshal(respBody, res); unmarshalErr != nil {
+			// A 2xx with an undecodable body is a wrapped error, never a
+			// silent empty result.
+			return errors.Join(err, fmt.Errorf("baton-sendgrid: decoding response into %T: %w", res, unmarshalErr))
 		}
 		if err != nil {
 			return err

@@ -100,6 +100,23 @@ func TestDoRequest_2xxUndecodableBody_WrappedErrorNotSilentEmpty(t *testing.T) {
 	require.Contains(t, err.Error(), "baton-sendgrid: decoding response into")
 }
 
+// TestDoRequest_2xxEmptyBodyWithDecodeTarget_WrappedErrorNotSilentEmpty
+// restores the old WithJSONResponse behavior (baton-sdk v0.42.7
+// pkg/uhttp/wrapper.go:228-243): with a non-nil decode target an EMPTY 2xx
+// body reached json.Unmarshal and errored loudly. Silently skipping decode
+// would zero GetSpecificTeammate/GetTeammates/GetScopes and let C1 bucket
+// real grants as deleted.
+func TestDoRequest_2xxEmptyBodyWithDecodeTarget_WrappedErrorNotSilentEmpty(t *testing.T) {
+	c, base := newTestClient(t, http.StatusOK, "")
+
+	var res models.ScopesResponse
+	err := c.doRequest(context.Background(), http.MethodGet, c.getUrl(base+"/v3/scopes"), &res, nil)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "baton-sendgrid: empty response body where JSON was expected")
+	require.Equal(t, models.ScopesResponse{}, res, "zero-valued target on the empty-body error")
+}
+
 // TestDoRequest_RateLimitAndServerErrors_JoinVendorDetailPreservingGrpcCode is
 // the regression for the previously-dropped 429/5xx statuses: the old switch
 // discarded vendor detail for them. Probed pinned truth (baton-sdk v0.42.7

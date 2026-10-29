@@ -512,6 +512,7 @@ func TestTeammateBuilder_Grants_ExcludesPseudoFlags(t *testing.T) {
 			"2fa_exempt",
 			"2fa_required",
 			"sender_verification_eligible",
+			"sender_verification_legacy",
 			"signup.trigger_confirmation",
 			"ui.read",
 			"mail.send",
@@ -546,6 +547,6 @@ func TestTeammateBuilder_Grants_ExcludesPseudoFlags(t *testing.T) {
 		scopes = append(scopes, s)
 	}
 	require.Equal(t,
-		[]string{"2fa_exempt", "2fa_required", "sender_verification_eligible", "signup.trigger_confirmation", "ui.read"},
+		[]string{"2fa_exempt", "2fa_required", "sender_verification_eligible", "sender_verification_legacy", "signup.trigger_confirmation", "ui.read"},
 		scopes)
 }

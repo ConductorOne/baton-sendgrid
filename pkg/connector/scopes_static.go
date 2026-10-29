@@ -223,6 +223,7 @@ var teammateNonGrantScopes = map[Scope]struct{}{
 	"2fa_exempt":                   {},
 	"2fa_required":                 {},
 	"sender_verification_eligible": {},
+	"sender_verification_legacy":   {},
 	"signup.trigger_confirmation":  {},
 }
 
