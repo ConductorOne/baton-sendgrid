@@ -264,11 +264,20 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 			if err != nil {
 				return nil, nil, err
 			}
-			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id, grant.WithAnnotation(&v2.InsertResourceGrants{})))
+			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
 		}
 		if len(excluded) > 0 {
 			logger.Debug("baton-sendgrid: excluding non-grantable scopes per teammateNonGrantScopes rule (CXH-2196)", zap.Strings("scopes", excluded))
 		}
+
+		// InsertResourceGrants must be a RESPONSE-level annotation: the syncer
+		// only checks resp.GetAnnotations() (baton-sdk pkg/sync/syncer.go:2687),
+		// and a grant-discovered resource is inserted only when the response
+		// carries it. Per-grant annotations are inert for insertion and leave
+		// the scope resource dangling (ingest invariant I3 fails on the Pebble
+		// engine, syncer.go:4091).
+		respAnnos := annotations.New(&v2.InsertResourceGrants{})
+		return rv, &rs.SyncOpResults{NextPageToken: nextToken, Annotations: respAnnos}, nil
 	}
 
 	return rv, &rs.SyncOpResults{NextPageToken: nextToken}, nil

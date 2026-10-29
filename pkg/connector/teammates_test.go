@@ -433,9 +433,11 @@ func (c *logCapture) Sync() error { return nil }
 
 // TestTeammateBuilder_Grants_EmitsEveryReportedScope proves every scope
 // string SendGrid reports on a teammate yields a grant — including the
-// documented dropped families and billing.create, which is absent from BOTH
-// the compatibility floor and the fixture's live v3/scopes list (AC1/AC7,
-// I1). The old catalog-gate skip line must never fire again.
+// documented dropped families and email_testing, which is absent from BOTH
+// the compatibility floor (pkg/connector/scopes_static.go) and the fixture's
+// live v3/scopes list. billing.create IS in the compatibility floor but is
+// absent from the live /v3/scopes list (AC1/AC7, I1). The old catalog-gate
+// skip line must never fire again.
 func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
 	logs := &logCapture{LevelEnabler: zapcore.DebugLevel}
 	ctx := ctxzap.ToContext(context.Background(), zap.New(logs))
@@ -467,7 +469,7 @@ func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
 	require.NoError(t, err)
 
 	tb := newTeammateBuilder(client, false)
-	grants, _, err := tb.Grants(ctx, resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
+	grants, results, err := tb.Grants(ctx, resource, rs.SyncOpAttrs{PageToken: pagination.Token{}})
 	require.NoError(t, err)
 
 	require.Len(t, grants, len(reported), "one grant per reported scope")
@@ -483,18 +485,16 @@ func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
 	}
 	require.Contains(t, emitted, "email_testing", "scope absent from both the floor and the live list must still be emitted (AC1)")
 
-	// Every scope grant must carry InsertResourceGrants: teammate-reported
-	// scopes like email_testing may be absent from both SendGridScopes and
-	// GET /v3/scopes, so scopeBuilder.List never lists that resource. The
-	// annotation is the only way the syncer inserts the grant-discovered
-	// scope resource (baton-sdk pkg/sync/syncer.go:2686-2808), preventing
-	// dangling grants.
-	for _, g := range grants {
-		annos := annotations.Annotations(g.GetAnnotations())
-		require.True(t, annos.Contains(&v2.InsertResourceGrants{}),
-			"grant for %s must carry InsertResourceGrants so the grant-discovered scope resource is inserted",
-			g.GetEntitlement().GetResource().GetId().GetResource())
-	}
+	// InsertResourceGrants must arrive as a RESPONSE-level annotation on the
+	// SyncOpResults returned by Grants: the syncer only inspects
+	// resp.GetAnnotations() (baton-sdk pkg/sync/syncer.go:2687-2688), and
+	// grant-discovered resources are inserted only when the response carries
+	// it. Per-grant annotations are inert for insertion and would leave the
+	// scope resource dangling (ingest invariant I3, ingest_invariants.go:1113).
+	require.NotNil(t, results)
+	respAnnos := annotations.Annotations(results.Annotations)
+	require.True(t, respAnnos.Contains(&v2.InsertResourceGrants{}),
+		"Grants response must carry InsertResourceGrants so grant-discovered scope resources are inserted")
 
 	for _, e := range logs.entries {
 		require.NotEqual(t, "baton-sendgrid: skipping unknown scope", e.message, "the old drop path must never fire (AC7)")
