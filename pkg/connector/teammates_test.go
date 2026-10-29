@@ -10,6 +10,7 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
@@ -481,6 +482,19 @@ func TestTeammateBuilder_Grants_EmitsEveryReportedScope(t *testing.T) {
 		require.Contains(t, emitted, scope, "scope %s must be emitted as a grant", scope)
 	}
 	require.Contains(t, emitted, "email_testing", "scope absent from both the floor and the live list must still be emitted (AC1)")
+
+	// Every scope grant must carry InsertResourceGrants: teammate-reported
+	// scopes like email_testing may be absent from both SendGridScopes and
+	// GET /v3/scopes, so scopeBuilder.List never lists that resource. The
+	// annotation is the only way the syncer inserts the grant-discovered
+	// scope resource (baton-sdk pkg/sync/syncer.go:2686-2808), preventing
+	// dangling grants.
+	for _, g := range grants {
+		annos := annotations.Annotations(g.GetAnnotations())
+		require.True(t, annos.Contains(&v2.InsertResourceGrants{}),
+			"grant for %s must carry InsertResourceGrants so the grant-discovered scope resource is inserted",
+			g.GetEntitlement().GetResource().GetId().GetResource())
+	}
 
 	for _, e := range logs.entries {
 		require.NotEqual(t, "baton-sendgrid: skipping unknown scope", e.message, "the old drop path must never fire (AC7)")

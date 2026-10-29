@@ -264,7 +264,7 @@ func (u *teammateBuilder) Grants(ctx context.Context, resource *v2.Resource, opt
 			if err != nil {
 				return nil, nil, err
 			}
-			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id))
+			rv = append(rv, grant.NewGrant(scopeRs, assignedEntitlement, resource.Id, grant.WithAnnotation(&v2.InsertResourceGrants{})))
 		}
 		if len(excluded) > 0 {
 			logger.Debug("baton-sendgrid: excluding non-grantable scopes per teammateNonGrantScopes rule (CXH-2196)", zap.Strings("scopes", excluded))
