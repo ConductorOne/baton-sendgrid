@@ -510,10 +510,20 @@ func (h *SendGridClient) doRequest(
 			// bucket real grants as deleted.
 			return errors.Join(err, errors.New("baton-sendgrid: empty response body where JSON was expected"))
 		}
-		if unmarshalErr := json.Unmarshal(respBody, res); unmarshalErr != nil {
-			// A 2xx with an undecodable body is a wrapped error, never a
-			// silent empty result.
-			return errors.Join(err, fmt.Errorf("baton-sendgrid: decoding response into %T: %w", res, unmarshalErr))
+		// Nil-target contract restored: callers that pass res == nil (DeleteTeammate,
+		// DeletePendingTeammate, CreateSubuser, DeleteSubuser, SetSubuserDisabled,
+		// SetTeammateScopes) must skip decoding entirely, exactly as the replaced
+		// uhttp.WithJSONResponse path did (baton-sdk v0.42.7 pkg/uhttp/wrapper.go
+		// WithResponse is only supplied when a target exists). Unmarshaling into a
+		// nil target fails on any body — InvalidUnmarshalError on non-empty,
+		// "unexpected end of JSON input" on empty — which broke every 2xx for
+		// those fire-and-forget calls.
+		if res != nil {
+			if unmarshalErr := json.Unmarshal(respBody, res); unmarshalErr != nil {
+				// A 2xx with an undecodable body is a wrapped error, never a
+				// silent empty result.
+				return errors.Join(err, fmt.Errorf("baton-sendgrid: decoding response into %T: %w", res, unmarshalErr))
+			}
 		}
 		if err != nil {
 			return err

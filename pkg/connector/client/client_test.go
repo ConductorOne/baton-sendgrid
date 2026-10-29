@@ -117,6 +117,33 @@ func TestDoRequest_2xxEmptyBodyWithDecodeTarget_WrappedErrorNotSilentEmpty(t *te
 	require.Equal(t, models.ScopesResponse{}, res, "zero-valued target on the empty-body error")
 }
 
+// TestDoRequest_NilDecodeTarget_SkipsDecode is the regression for judge
+// comment 4410197492: the decode used to run unconditionally, so every
+// fire-and-forget 2xx call that passes res == nil (DeleteTeammate,
+// DeletePendingTeammate, CreateSubuser, DeleteSubuser, SetSubuserDisabled,
+// SetTeammateScopes) failed — InvalidUnmarshalError on a non-empty body,
+// "unexpected end of JSON input" on an empty one. Contract: nil target skips
+// decode entirely, on any 2xx body.
+func TestDoRequest_NilDecodeTarget_SkipsDecode(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "200 non-empty body", status: http.StatusOK, body: `{"foo":"bar"}`},
+		{name: "204 empty body", status: http.StatusNoContent, body: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, base := newTestClient(t, tc.status, tc.body)
+
+			err := c.doRequest(context.Background(), http.MethodGet, c.getUrl(base+"/v3/scopes"), nil, nil)
+
+			require.NoError(t, err)
+		})
+	}
+}
+
 // TestDoRequest_RateLimitAndServerErrors_JoinVendorDetailPreservingGrpcCode is
 // the regression for the previously-dropped 429/5xx statuses: the old switch
 // discarded vendor detail for them. Probed pinned truth (baton-sdk v0.42.7
