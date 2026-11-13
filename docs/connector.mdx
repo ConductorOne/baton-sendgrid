@@ -26,6 +26,8 @@ New teammates are invited by email with optional scopes and admin permissions:
 * `is_admin`: Whether the teammate has admin privileges (default: false). 
 * `scopes`: List of permission scopes for non-admin teammates (default: "user.profile.read"). Scopes are ignored when `is_admin` is true, as admins have full access.
 
+**Scope resources and grants:** The connector's scope resource catalog is the sorted union of a built-in compatibility floor and the live `GET /v3/scopes` response for the authenticating key, so the catalog only grows. Every permission scope SendGrid reports on a teammate is emitted as a grant — including scopes absent from both the floor and `/v3/scopes`. The only exclusions are SendGrid's documented non-grantable account/UI state flags: `2fa_exempt`, `2fa_required`, `sender_verification_eligible`, `sender_verification_legacy`, `signup.trigger_confirmation`, and `ui.*` (logged once per teammate at debug level when present).
+
 ## Gather SendGrid credentials 
 
 Configuring the connector requires you to pass in credentials generated in SendGrid. Gather these credentials before you move on. 

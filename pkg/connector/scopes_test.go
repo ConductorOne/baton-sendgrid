@@ -9,7 +9,10 @@ import (
 	"github.com/conductorone/baton-sendgrid/pkg/connector/models"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // scopeStateFake models a teammate's scopes in SendGrid together with the http
@@ -28,6 +31,20 @@ type scopeStateFake struct {
 	// cachedReads counts reads that went through the cacheable variant, which
 	// no provisioning path may use.
 	cachedReads int
+
+	// scopes/scopesErr drive the builder's own GetScopes method (do NOT rely
+	// on the embedded fake's fields).
+	scopes    []string
+	scopesErr error
+}
+
+// GetScopes backs scopeBuilder.List's catalog fetch; owning the method (not
+// the embedded interface) lets List tests drive the catalog directly.
+func (f *scopeStateFake) GetScopes(_ context.Context) ([]string, error) {
+	if f.scopesErr != nil {
+		return nil, f.scopesErr
+	}
+	return f.scopes, nil
 }
 
 func (f *scopeStateFake) GetSpecificTeammate(_ context.Context, username sgclient.Username, _ sgclient.OnBehalfOf) (*models.TeammateScope, error) {
@@ -136,4 +153,62 @@ func TestScopeBuilder_Grant_AlreadyGrantedUsesLiveScopes(t *testing.T) {
 	require.True(t, annos.Contains(&v2.GrantAlreadyExists{}))
 	require.ElementsMatch(t, []string{"alerts.read", "api_keys.read"}, client.live)
 	require.Zero(t, client.cachedReads, "the read feeding SetTeammateScopes must bypass the http cache")
+}
+
+// TestScopeBuilder_List_UnionFloorAndLive proves the catalog is the sorted
+// union of the immutable floor with the live GET /v3/scopes response (AC3,
+// I2): a floor-only scope is still listed when live omits it, a live-only
+// scope is added, output is sorted by scope string, and there are no
+// duplicates.
+func TestScopeBuilder_List_UnionFloorAndLive(t *testing.T) {
+	client := &scopeStateFake{
+		scopes: []string{"mail.send", "sso.settings.read", "alerts.read"}, // alerts.read is in the floor too
+	}
+
+	sb := newScopeBuilder(client)
+	rv, results, err := sb.List(context.Background(), nil, rs.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.NotNil(t, results)
+
+	var got []string
+	for _, r := range rv {
+		require.Equal(t, scopeResourceType.Id, r.Id.ResourceType)
+		require.Equal(t, string(Scope(r.Id.Resource)), r.Id.Resource, "scope resource ID must be the vendor scope string (I1)")
+		got = append(got, r.Id.Resource)
+	}
+
+	require.Contains(t, got, "billing.create", "floor-only scope must survive the union")
+	require.Contains(t, got, "sso.settings.read", "live-only scope must be added")
+	require.Contains(t, got, "mail.send")
+
+	require.True(t, slices.IsSorted(got), "catalog must be emitted sorted by scope string")
+
+	seen := make(map[string]struct{})
+	for _, s := range got {
+		_, dup := seen[s]
+		require.False(t, dup, "duplicate scope resource %s in catalog", s)
+		seen[s] = struct{}{}
+	}
+
+	// The union must be a superset of the floor (additive-only, B-series).
+	for scope := range SendGridScopes {
+		require.Contains(t, seen, string(scope), "floor scope %s must still be listed", scope)
+	}
+}
+
+// TestScopeBuilder_List_GetScopesErrorPropagates proves a GetScopes failure
+// fails the sync: List returns a wrapped error, never empty-with-nil-error
+// (S1/I4) and never a floor fallback.
+func TestScopeBuilder_List_GetScopesErrorPropagates(t *testing.T) {
+	client := &scopeStateFake{
+		scopesErr: status.Error(codes.Unavailable, "v3/scopes is down"),
+	}
+
+	sb := newScopeBuilder(client)
+	rv, _, err := sb.List(context.Background(), nil, rs.SyncOpAttrs{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "baton-sendgrid: failed to get scope catalog")
+	require.ErrorIs(t, err, client.scopesErr, "GetScopes error must be wrapped with %w, not replaced")
+	require.Empty(t, rv)
 }

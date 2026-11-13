@@ -29,18 +29,34 @@ func (r *scopeBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
 	return scopeResourceType
 }
 
-func (r *scopeBuilder) List(_ context.Context, _ *v2.ResourceId, _ rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
-	rv := make([]*v2.Resource, 0, len(SendGridScopes))
+func (r *scopeBuilder) List(ctx context.Context, _ *v2.ResourceId, _ rs.SyncOpAttrs) ([]*v2.Resource, *rs.SyncOpResults, error) {
+	live, err := r.client.GetScopes(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-sendgrid: failed to get scope catalog: %w", err)
+	}
 
+	catalog := make(map[Scope]struct{}, len(SendGridScopes)+len(live))
 	for scope := range SendGridScopes {
+		catalog[scope] = struct{}{}
+	}
+	for _, scope := range live {
+		catalog[Scope(scope)] = struct{}{}
+	}
+
+	keys := make([]Scope, 0, len(catalog))
+	for scope := range catalog {
+		keys = append(keys, scope)
+	}
+	slices.Sort(keys)
+
+	rv := make([]*v2.Resource, 0, len(keys))
+	for _, scope := range keys {
 		rb, err := scopeResource(scope)
 		if err != nil {
 			return nil, nil, err
 		}
-
 		rv = append(rv, rb)
 	}
-
 	return rv, &rs.SyncOpResults{}, nil
 }
 
